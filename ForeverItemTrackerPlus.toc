@@ -1,10 +1,11 @@
 ## Interface: 16001
-## Title: Forever Ledger
+## Title: Forever Item Tracker PLUS
 ## Notes: Alt item and gold counts plus last auction house price, shown on tooltips.
 ## Author: ashishkhatri
-## Version: 1.1.3
+## Version: 1.2.0
 ## X-License: MIT
 ## X-Website: https://github.com/ashishkhatri/foreverledger
-## SavedVariables: ForeverLedgerDB
+## X-Curse-Project-ID: 1792172
+## SavedVariables: ForeverItemTrackerPlusDB
 
-ForeverLedger.lua
+ForeverItemTrackerPlus.lua

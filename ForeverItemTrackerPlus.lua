@@ -1,8 +1,8 @@
--- Forever Ledger: what each of your characters holds, and the last auction house price,
+-- Forever Item Tracker PLUS: what each of your characters holds, and the last auction house price,
 -- added to item and gold tooltips. Nothing else.
 
 local ADDON = ...
-local PREFIX = "|cff33ff99Forever Ledger|r: "
+local PREFIX = "|cff33ff99Forever Item Tracker PLUS|r: "
 local STALE = 12 * 3600        -- scan age shown in red after this many seconds
 local MIN_RESCAN = 15 * 60     -- the server allows one full scan per 15 minutes
 
@@ -299,12 +299,12 @@ local function AddItemLines(tt, id)
 end
 
 local function OnItemTooltip(tt)
-    if not DB or tt.ledgerDone then return end
+    if not DB or tt.fitpDone then return end
     if tt ~= GameTooltip and tt ~= ItemRefTooltip then return end
     local _, link = tt:GetItem()
     local id = LinkID(link)
     if not id then return end
-    tt.ledgerDone = true
+    tt.fitpDone = true
     AddItemLines(tt, id)
     tt:Show()
 end
@@ -316,7 +316,7 @@ local function HookTooltips()
         TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, OnItemTooltip)
     end
     for _, tt in ipairs({ GameTooltip, ItemRefTooltip }) do
-        tt:HookScript("OnTooltipCleared", function(self) self.ledgerDone = nil end)
+        tt:HookScript("OnTooltipCleared", function(self) self.fitpDone = nil end)
         if not useProcessor then tt:HookScript("OnTooltipSetItem", OnItemTooltip) end
     end
 end
@@ -335,8 +335,8 @@ local function AddGoldLines(tt)
 end
 
 local function HookGold(frame)
-    if not frame or frame.ledgerHooked then return end
-    frame.ledgerHooked = true
+    if not frame or frame.fitpHooked then return end
+    frame.fitpHooked = true
     frame:HookScript("OnEnter", function(self)
         if not GameTooltip:IsOwned(self) then
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -370,8 +370,8 @@ local function HookAllMoney()
     local cb = ContainerFrameCombinedBags
     if cb then
         HookMoneyFrame(cb.MoneyFrame or _G["ContainerFrameCombinedBagsMoneyFrame"])
-        if not cb.ledgerHooked then
-            cb.ledgerHooked = true
+        if not cb.fitpHooked then
+            cb.fitpHooked = true
             -- some parts are built on first open, so hook again when it shows
             cb:HookScript("OnShow", function(self)
                 HookMoneyFrame(self.MoneyFrame or _G["ContainerFrameCombinedBagsMoneyFrame"])
@@ -387,8 +387,8 @@ local H = {}
 
 function H.ADDON_LOADED(name)
     if name ~= ADDON then return end
-    ForeverLedgerDB = ForeverLedgerDB or {}
-    DB = ForeverLedgerDB
+    ForeverItemTrackerPlusDB = ForeverItemTrackerPlusDB or {}
+    DB = ForeverItemTrackerPlusDB
     DB.chars = DB.chars or {}
     DB.prices = DB.prices or {}
     if DB.auto == nil then DB.auto = true end
@@ -445,10 +445,11 @@ f:SetScript("OnEvent", function(_, e, ...)
 end)
 
 ---------------------------------------------------------------------------
--- /ledger
+-- /fitp, /itemtracker
 ---------------------------------------------------------------------------
-SLASH_LEDGER1 = "/ledger"
-SlashCmdList.LEDGER = function(msg)
+SLASH_FITP1 = "/fitp"
+SLASH_FITP2 = "/itemtracker"
+SlashCmdList.FITP = function(msg)
     local cmd, arg = (msg or ""):match("^(%S*)%s*(.-)$")
     cmd = cmd:lower()
     if cmd == "scan" then
@@ -496,6 +497,6 @@ SlashCmdList.LEDGER = function(msg)
         end
         Msg("no character named %s.", arg)
     else
-        Msg("/ledger scan  |  /ledger auto  |  /ledger gold  |  /ledger bags  |  /ledger forget Name[-Realm]")
+        Msg("/fitp scan  |  /fitp auto  |  /fitp gold  |  /fitp bags  |  /fitp forget Name[-Realm]")
     end
 end

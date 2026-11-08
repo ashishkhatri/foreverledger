@@ -1,16 +1,22 @@
 name: Release
 
-# To release: change the "## Version:" line in ForeverLedger.toc and push to main.
-# If that version has no release yet, this tags it (v<version>), builds
-# ForeverLedger-v<version>.zip and publishes it as a GitHub Release.
+# To release: change the "## Version:" line in ForeverItemTrackerPlus.toc and push
+# to main. If that version has no release yet, this tags it (v<version>), builds
+# ForeverItemTrackerPlus-v<version>.zip, publishes it as a GitHub Release and,
+# when the CF_API_KEY secret is set, uploads it to CurseForge (project ID from the
+# .toc's X-Curse-Project-ID line, tagged with the newest WoW Forever game version).
 # It can also be run by hand from the Actions tab.
 on:
   push:
     branches: [main]
     paths:
-      - ForeverLedger.toc
+      - ForeverItemTrackerPlus.toc
       - .github/workflows/**
   workflow_dispatch:
+
+env:
+  ADDON: ForeverItemTrackerPlus
+  TITLE: Forever Item Tracker PLUS
 
 jobs:
   release:
@@ -27,7 +33,7 @@ jobs:
       - name: Read version from the .toc
         id: ver
         run: |
-          v=$(grep -m1 '^## Version:' ForeverLedger.toc | sed 's/^## Version:[[:space:]]*//' | tr -d '\r')
+          v=$(grep -m1 '^## Version:' "$ADDON.toc" | sed 's/^## Version:[[:space:]]*//' | tr -d '\r')
           if [ -z "$v" ]; then echo "No ## Version line found"; exit 1; fi
           echo "tag=v$v" >> "$GITHUB_OUTPUT"
           if gh release view "v$v" >/dev/null 2>&1; then
@@ -40,12 +46,12 @@ jobs:
       - name: Build the zip
         if: steps.ver.outputs.new == 'true'
         run: |
-          mkdir -p dist/ForeverLedger
-          cp ForeverLedger.toc ForeverLedger.lua LICENSE dist/ForeverLedger/
-          cp -r media dist/ForeverLedger/
-          cd dist && zip -r "ForeverLedger-${{ steps.ver.outputs.tag }}.zip" ForeverLedger
+          mkdir -p "dist/$ADDON"
+          cp "$ADDON.toc" "$ADDON.lua" LICENSE "dist/$ADDON/"
+          cp -r media "dist/$ADDON/"
+          cd dist && zip -r "$ADDON-${{ steps.ver.outputs.tag }}.zip" "$ADDON"
 
-      - name: Tag and publish
+      - name: Tag and publish on GitHub
         if: steps.ver.outputs.new == 'true'
         run: |
           tag="${{ steps.ver.outputs.tag }}"
@@ -55,7 +61,57 @@ jobs:
             git tag "$tag"
             git push origin "$tag"
           fi
-          gh release create "$tag" "dist/ForeverLedger-$tag.zip" \
+          gh release create "$tag" "dist/$ADDON-$tag.zip" \
             --verify-tag \
-            --title "Forever Ledger $tag" \
-            --notes "Unzip into \`World of Warcraft\\_forever_\\Interface\\AddOns\\\` so you end up with \`AddOns\\ForeverLedger\\ForeverLedger.toc\`. Restart the game the first time so the icons load."
+            --title "$TITLE $tag" \
+            --notes "Unzip into \`World of Warcraft\\_forever_\\Interface\\AddOns\\\` so you end up with \`AddOns\\$ADDON\\$ADDON.toc\`. Restart the game the first time so the icons load."
+
+      - name: Upload to CurseForge
+        if: steps.ver.outputs.new == 'true'
+        env:
+          CF_API_KEY: ${{ secrets.CF_API_KEY }}
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          if [ -z "$CF_API_KEY" ]; then
+            echo "No CF_API_KEY secret set; skipping CurseForge."
+            exit 0
+          fi
+          pid=$(grep -m1 '^## X-Curse-Project-ID:' "$ADDON.toc" | sed 's/^## X-Curse-Project-ID:[[:space:]]*//' | tr -d '\r')
+          if [ -z "$pid" ]; then echo "No X-Curse-Project-ID in the .toc"; exit 1; fi
+
+          api=https://wow.curseforge.com/api
+          curl -sSf -H "X-Api-Token: $CF_API_KEY" "$api/game/version-types" > types.json
+          curl -sSf -H "X-Api-Token: $CF_API_KEY" "$api/game/versions" > versions.json
+
+          # Pick the newest game version in the WoW Forever version type.
+          meta=$(python3 - <<'EOF'
+          import json, os, sys
+          types = json.load(open("types.json"))
+          versions = json.load(open("versions.json"))
+          forever = {t["id"] for t in types
+                     if "forever" in (t.get("name", "") + t.get("slug", "")).lower()}
+          if not forever:
+              names = ", ".join(sorted(t.get("name", "?") for t in types))
+              sys.exit(f"No WoW Forever game version type on CurseForge. Types: {names}")
+          pick = [v for v in versions if v.get("gameVersionTypeID") in forever]
+          if not pick:
+              sys.exit("The WoW Forever version type has no game versions yet.")
+          newest = max(pick, key=lambda v: v["id"])
+          print(f"Tagging with game version {newest['name']} (id {newest['id']})", file=sys.stderr)
+          tag = os.environ["TAG"]
+          print(json.dumps({
+              "displayName": f"{os.environ['TITLE']} {tag}",
+              "changelog": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/releases/tag/{tag}",
+              "changelogType": "text",
+              "gameVersions": [newest["id"]],
+              "releaseType": "release",
+          }))
+          EOF
+          )
+
+          curl -sSf -H "X-Api-Token: $CF_API_KEY" \
+            --form-string "metadata=$meta" \
+            -F "file=@dist/$ADDON-$TAG.zip" \
+            "$api/projects/$pid/upload-file"
+          echo
+          echo "Uploaded to CurseForge project $pid."
