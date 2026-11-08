@@ -31,7 +31,7 @@ Log into each character once, and open the bank and mailbox on it, so its items 
 
 ## Releasing
 
-Push a version tag (for example `git tag v1.2.0 && git push origin v1.2.0`). The release workflow builds the zip with [BigWigs packager](https://github.com/BigWigsMods/packager) and attaches it to a GitHub Release.
+Change the `## Version:` line in `ForeverLedger.toc` (for example to `1.2.0`) and push to `main`. The release workflow tags that version, builds the zip with [BigWigs packager](https://github.com/BigWigsMods/packager) and attaches it to a GitHub Release. A version that's already been released is skipped. You can also run the workflow by hand from the Actions tab.
 
 To also publish to CurseForge or Wago, add the project ID to `ForeverLedger.toc` (`## X-Curse-Project-ID:` / `## X-Wago-ID:`) and the matching API token as a repository secret (`CF_API_KEY` / `WAGO_API_TOKEN`).
 

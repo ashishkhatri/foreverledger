@@ -1,12 +1,16 @@
 name: Release
 
-# Push a tag like v1.2.0 to build ForeverLedger-v1.2.0.zip and publish it.
-# GitHub Releases always; CurseForge / Wago too once their secrets
-# (CF_API_KEY, WAGO_API_TOKEN) and project IDs in the .toc are added.
+# To release: change the "## Version:" line in ForeverLedger.toc and push to main.
+# If that version has no tag yet, this tags it (v<version>), builds
+# ForeverLedger-v<version>.zip and publishes it to GitHub Releases.
+# CurseForge / Wago uploads switch on once their secrets (CF_API_KEY,
+# WAGO_API_TOKEN) and project IDs in the .toc are added.
+# It can also be run by hand from the Actions tab.
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
+    paths: [ForeverLedger.toc]
+  workflow_dispatch:
 
 jobs:
   release:
@@ -22,4 +26,27 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: BigWigsMods/packager@v2
+      - name: Read version from the .toc
+        id: ver
+        run: |
+          v=$(grep -m1 '^## Version:' ForeverLedger.toc | sed 's/^## Version:[[:space:]]*//' | tr -d '\r')
+          if [ -z "$v" ]; then echo "No ## Version line found"; exit 1; fi
+          echo "tag=v$v" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/v$v" >/dev/null; then
+            echo "v$v is already released; nothing to do."
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Tag the release
+        if: steps.ver.outputs.new == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.ver.outputs.tag }}"
+          git push origin "${{ steps.ver.outputs.tag }}"
+
+      - name: Package and publish
+        if: steps.ver.outputs.new == 'true'
+        uses: BigWigsMods/packager@v2
