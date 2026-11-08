@@ -1,4 +1,0 @@
-package-as: ForeverLedger
-
-ignore:
-  - README.md
