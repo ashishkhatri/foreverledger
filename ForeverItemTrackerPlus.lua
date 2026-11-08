@@ -33,6 +33,9 @@ local Coin = GetCoinTextureString
         return string.format("%dg %ds %dc", math.floor(c / 10000), math.floor(c % 10000 / 100), c % 100)
     end
 
+-- Forever moved some globals into C_ namespaces; use whichever exists.
+local ItemInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
+
 local function LinkID(link) return link and tonumber(link:match("item:(%d+)")) end
 
 local function Ago(s)
@@ -284,7 +287,7 @@ local function AddItemLines(tt, id)
     end
     if rows > 1 then tt:AddDoubleLine("Total", total, .6, .6, .6, .6, .6, .6) end
 
-    local bind = select(14, GetItemInfo(id))
+    local bind = ItemInfo and select(14, ItemInfo(id))
     if bind == 1 or bind == 4 then return end -- bind on pickup / quest items can't be sold
     if not started then tt:AddLine(" ") end
     local p = DB.prices[priceKey]

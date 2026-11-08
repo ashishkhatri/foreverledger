@@ -2,7 +2,7 @@
 ## Title: Forever Item Tracker PLUS
 ## Notes: Alt item and gold counts plus last auction house price, shown on tooltips.
 ## Author: ashishkhatri
-## Version: 1.2.0
+## Version: 1.2.1
 ## X-License: MIT
 ## X-Website: https://github.com/ashishkhatri/foreverledger
 ## X-Curse-Project-ID: 1792172
