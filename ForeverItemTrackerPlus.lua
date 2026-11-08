@@ -189,12 +189,68 @@ local function Accessors()
            function(i) return C_AuctionHouse.GetReplicateItemInfo(i - 1) end
 end
 
+-- Progress indicator: one line of text and a thin bar just above the top edge
+-- of the auction house window. It hides with the window.
+local BAR_W = 220
+local bar, waitTicker, scanStart
+
+local function ProgressUI()
+    if bar then return bar end
+    local parent = AuctionHouseFrame or AuctionFrame
+    if not parent then return nil end
+    bar = CreateFrame("Frame", nil, parent)
+    bar:SetSize(BAR_W, 20)
+    bar:SetPoint("BOTTOM", parent, "TOP", 0, 6)
+    bar.text = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    bar.text:SetPoint("TOP")
+    local track = bar:CreateTexture(nil, "BACKGROUND")
+    track:SetColorTexture(1, 1, 1, 0.12)
+    track:SetPoint("BOTTOMLEFT")
+    track:SetPoint("BOTTOMRIGHT")
+    track:SetHeight(3)
+    bar.fill = bar:CreateTexture(nil, "ARTWORK")
+    bar.fill:SetColorTexture(0.2, 1, 0.6, 0.9)
+    bar.fill:SetPoint("BOTTOMLEFT")
+    bar.fill:SetHeight(3)
+    bar:Hide()
+    return bar
+end
+
+-- frac: 0..1 fills the bar, nil hides the fill. hideAfter: seconds, or nil to stay.
+local function ShowProgress(text, frac, hideAfter)
+    local b = ProgressUI()
+    if not b then return end
+    b.text:SetText(text)
+    if frac then
+        b.fill:SetWidth(math.max(0.001, BAR_W * math.min(frac, 1)))
+        b.fill:Show()
+    else
+        b.fill:Hide()
+    end
+    b:Show()
+    b.token = (b.token or 0) + 1
+    if hideAfter then
+        local token = b.token
+        C_Timer.After(hideAfter, function() if b.token == token then b:Hide() end end)
+    end
+end
+
+local function StopWaiting()
+    if waitTicker then waitTicker:Cancel(); waitTicker = nil end
+end
+
+local function Elapsed() return math.floor(GetTime() - (scanStart or GetTime()) + 0.5) end
+
+local Comma = BreakUpLargeNumbers or tostring
+
 local function Process()
+    StopWaiting()
     local getN, getInfo = Accessors()
     local n = getN() or 0
     if n == 0 then
         scanning = false
         Msg("the scan came back empty; it will retry later.")
+        ShowProgress("Scan came back empty; will retry", nil, 5)
         return
     end
     local items, i = {}, 1
@@ -203,8 +259,10 @@ local function Process()
         if not ahOpen or (getN() or 0) ~= n then
             scanning = false
             Msg("scan interrupted; it will retry later.")
+            ShowProgress("Scan interrupted; will retry", nil, 5)
             return
         end
+        ShowProgress(string.format("Scanning: reading auctions  %d%%", math.floor((i - 1) / n * 100)), (i - 1) / n)
         local last = math.min(i + 2499, n)
         for j = i, last do
             local _, _, count, _, _, _, _, _, _, buyout, _, _, _, _, _, _, id = getInfo(j)
@@ -223,6 +281,7 @@ local function Process()
             local k = 0
             for _ in pairs(items) do k = k + 1 end
             Msg("scanned %d auctions (%d items).", n, k)
+            ShowProgress(string.format("Scan complete: %s auctions in %ds", Comma(n), Elapsed()), 1, 5)
         end
     end
     step()
@@ -253,8 +312,18 @@ local function TryScan(manual)
         return
     end
     Msg("scanning the auction house...")
+    scanStart = GetTime()
+    ShowProgress("Scanning: waiting for server  0s")
+    StopWaiting()
+    waitTicker = C_Timer.NewTicker(0.25, function()
+        ShowProgress(string.format("Scanning: waiting for server  %ds", Elapsed()))
+    end)
     C_Timer.After(90, function()
-        if awaiting then awaiting, scanning = false, false end
+        if awaiting then
+            awaiting, scanning = false, false
+            StopWaiting()
+            ShowProgress("Scan timed out; will retry", nil, 5)
+        end
     end)
 end
 
@@ -434,6 +503,8 @@ end
 function H.AUCTION_HOUSE_CLOSED()
     ahOpen, awaiting, scanning = false, false, false
     if ticker then ticker:Cancel(); ticker = nil end
+    StopWaiting()
+    if bar then bar:Hide() end
 end
 H.AUCTION_ITEM_LIST_UPDATE = OnScanData
 H.REPLICATE_ITEM_LIST_UPDATE = OnScanData

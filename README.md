@@ -5,7 +5,7 @@
 A minimalist WoW Forever addon that does two things:
 
 1. **Alt inventory on tooltips.** Hover any item to see how many each of your characters has, with an icon for where it is: bags, bank, mail or equipped. Hover your gold (the backpack button, or the coins at the bottom of your bags) to see every character's gold and a total.
-2. **Auction house prices on tooltips.** While the auction house is open, Forever Item Tracker PLUS runs a full scan (at most once every 15 minutes, the server's limit). Tradeable items then show the lowest buyout per unit from the last scan and how long ago it ran. The age turns red after 12 hours.
+2. **Auction house prices on tooltips.** While the auction house is open, Forever Item Tracker PLUS runs a full scan (at most once every 15 minutes, the server's limit), with a small progress bar above the auction house window. Stay at the auction house until it says the scan is complete. Tradeable items then show the lowest buyout per unit from the last scan and how long ago it ran. The age turns red after 12 hours.
 
 ## Install
 
