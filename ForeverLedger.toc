@@ -1,0 +1,10 @@
+## Interface: 16001
+## Title: Forever Ledger
+## Notes: Alt item and gold counts plus last auction house price, shown on tooltips.
+## Author: ashishkhatri
+## Version: @project-version@
+## X-License: MIT
+## X-Website: https://github.com/ashishkhatri/foreverledger
+## SavedVariables: ForeverLedgerDB
+
+ForeverLedger.lua

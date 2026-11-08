@@ -1,0 +1,25 @@
+name: Release
+
+# Push a tag like v1.2.0 to build ForeverLedger-v1.2.0.zip and publish it.
+# GitHub Releases always; CurseForge / Wago too once their secrets
+# (CF_API_KEY, WAGO_API_TOKEN) and project IDs in the .toc are added.
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+      CF_API_KEY: ${{ secrets.CF_API_KEY }}
+      WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: BigWigsMods/packager@v2
