@@ -174,6 +174,11 @@ local function IDsIn(bags)
 end
 
 local moving
+local bankButtons
+local function SetBankButtonsEnabled(on)
+    if not bankButtons then return end
+    for _, b in ipairs(bankButtons) do b:SetEnabled(on) end
+end
 
 -- Move items from the `from` containers to the other side. With onlyID, every
 -- stack of that one item moves; otherwise every item whose ID the `to` side
@@ -202,6 +207,7 @@ local function MoveItems(from, to, verb, onlyID)
     end
 
     moving = true
+    SetBankButtonsEnabled(false)
     local i = 1
     local ticker
     local function finish()
@@ -209,6 +215,7 @@ local function MoveItems(from, to, verb, onlyID)
         -- give the last moves a moment to land, then count what stayed behind
         C_Timer.After(0.6, function()
             moving = false
+            SetBankButtonsEnabled(true)
             local stuck = 0
             for _, q in ipairs(queue) do
                 if SlotItem(q[1], q[2]) == q[3] then stuck = stuck + 1 end
@@ -265,6 +272,39 @@ local function OnModifiedItemClick(link, itemLocation)
     else
         MoveItems(BAGS, BANK, "deposit", id)
     end
+end
+
+-- Two buttons under the bank window, each with a picture of what it does:
+-- bag -> bank (deposit) and bank -> bag (withdraw).
+local function CreateBankButtons()
+    local parent = BankFrame
+    if not parent or bankButtons then return end
+    local function Button(file, label, tip, onClick)
+        local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+        b:SetSize(150, 26)
+        b:SetText(string.format("|TInterface\\AddOns\\%s\\media\\%s:16:32:0:0:128:64:0:128:0:64|t  %s",
+            ADDON, file, label))
+        b:SetScript("OnClick", onClick)
+        b:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+            GameTooltip:SetText(label, 1, 1, 1)
+            GameTooltip:AddLine(tip, nil, nil, nil, true)
+            GameTooltip:AddLine("Tip: Ctrl+click a single item to move every stack of just that item.", 0.6, 0.6, 0.6, true)
+            GameTooltip:Show()
+        end)
+        b:SetScript("OnLeave", GameTooltip_Hide)
+        return b
+    end
+    local dep = Button("deposit", "Deposit",
+        "Move every item in your bags that your bank already has into the bank.",
+        function() MoveItems(BAGS, BANK, "deposit") end)
+    local wd = Button("withdraw", "Withdraw",
+        "Move every item in your bank that your bags already have into your bags.",
+        function() MoveItems(BANK, BAGS, "withdraw") end)
+    dep:SetPoint("TOPRIGHT", parent, "BOTTOM", -3, -4)
+    wd:SetPoint("TOPLEFT", parent, "BOTTOM", 3, -4)
+    bankButtons = { dep, wd }
+    SetBankButtonsEnabled(not moving)
 end
 
 local function ScanEquip()
@@ -607,7 +647,7 @@ end
 
 H.BAG_UPDATE = QueueBags
 H.PLAYERBANKSLOTS_CHANGED = QueueBags
-function H.BANKFRAME_OPENED() bankOpen = true; QueueBags() end
+function H.BANKFRAME_OPENED() bankOpen = true; CreateBankButtons(); QueueBags() end
 function H.BANKFRAME_CLOSED() bankOpen = false end
 function H.PLAYER_EQUIPMENT_CHANGED() ScanEquip(); QueueBags() end
 H.BAG_CONTAINER_UPDATE = QueueBags
