@@ -148,6 +148,119 @@ local function QueueBags()
     C_Timer.After(0.3, function() pending = false; ScanBags() end)
 end
 
+---------------------------------------------------------------------------
+-- Bank: move items that already exist on the other side
+---------------------------------------------------------------------------
+local UseItem = (CC and CC.UseContainerItem) or UseContainerItem
+local function SlotLocked(bag, slot)
+    if CC and CC.GetContainerItemInfo then
+        local info = CC.GetContainerItemInfo(bag, slot)
+        return info and info.isLocked
+    end
+    return select(3, GetContainerItemInfo(bag, slot))
+end
+
+-- Item IDs in a set of containers (contents only, not the bags themselves).
+local function IDsIn(bags)
+    local t = {}
+    for _, bag in ipairs(bags) do
+        local ok, slots = pcall(NumSlots, bag)
+        for slot = 1, (ok and slots or 0) do
+            local id = SlotItem(bag, slot)
+            if id then t[id] = true end
+        end
+    end
+    return t
+end
+
+local moving
+local function SetBankButtonsEnabled(on) end -- replaced once the buttons exist
+
+-- Move every item in `from` whose ID also appears in `to`. The game moves an
+-- item to the other side when you "use" it while the bank is open; one item
+-- every 0.1s keeps the server from rejecting moves.
+local function MoveMatching(from, to, verb)
+    if not bankOpen then Msg("open your bank first.") return end
+    if moving then Msg("already moving items.") return end
+    local want = IDsIn(to)
+    local queue = {}
+    for _, bag in ipairs(from) do
+        if bag ~= KEYRING_CONTAINER then
+            local ok, slots = pcall(NumSlots, bag)
+            for slot = 1, (ok and slots or 0) do
+                local id = SlotItem(bag, slot)
+                if id and want[id] then queue[#queue + 1] = { bag, slot, id } end
+            end
+        end
+    end
+    if #queue == 0 then Msg("nothing to %s.", verb) return end
+
+    moving = true
+    SetBankButtonsEnabled(false)
+    local i = 1
+    local ticker
+    local function finish()
+        if ticker then ticker:Cancel() end
+        -- give the last moves a moment to land, then count what stayed behind
+        C_Timer.After(0.6, function()
+            moving = false
+            SetBankButtonsEnabled(true)
+            local stuck = 0
+            for _, q in ipairs(queue) do
+                if SlotItem(q[1], q[2]) == q[3] then stuck = stuck + 1 end
+            end
+            local moved = #queue - stuck
+            if stuck > 0 then
+                Msg("%s %d stack%s; %d didn't fit.", verb == "deposit" and "deposited" or "withdrew",
+                    moved, moved == 1 and "" or "s", stuck)
+            else
+                Msg("%s %d stack%s.", verb == "deposit" and "deposited" or "withdrew",
+                    moved, moved == 1 and "" or "s")
+            end
+            QueueBags()
+        end)
+    end
+    ticker = C_Timer.NewTicker(0.1, function()
+        if not bankOpen then finish() return end
+        local q = queue[i]
+        if not q then finish() return end
+        local bag, slot, id = q[1], q[2], q[3]
+        if SlotLocked(bag, slot) then return end -- try this slot again next tick
+        if SlotItem(bag, slot) == id then UseItem(bag, slot) end
+        i = i + 1
+    end)
+end
+
+local function CreateBankButtons()
+    local parent = BankFrame
+    if not parent or parent.fitpButtons then return end
+    local function Button(label, tip, onClick)
+        local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+        b:SetSize(140, 22)
+        b:SetText(label)
+        b:SetScript("OnClick", onClick)
+        b:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText(label, 1, 1, 1)
+            GameTooltip:AddLine(tip, nil, nil, nil, true)
+            GameTooltip:Show()
+        end)
+        b:SetScript("OnLeave", GameTooltip_Hide)
+        return b
+    end
+    local dep = Button("Deposit matching", "Move every item in your bags that your bank already has into the bank.",
+        function() MoveMatching(BAGS, BANK, "deposit") end)
+    local wd = Button("Withdraw matching", "Move every item in your bank that your bags already have into your bags.",
+        function() MoveMatching(BANK, BAGS, "withdraw") end)
+    -- just below the bottom edge of the bank window, side by side
+    dep:SetPoint("TOPRIGHT", parent, "BOTTOM", -2, -2)
+    wd:SetPoint("TOPLEFT", parent, "BOTTOM", 2, -2)
+    parent.fitpButtons = { dep, wd }
+    SetBankButtonsEnabled = function(on)
+        for _, b in ipairs(parent.fitpButtons) do b:SetEnabled(on) end
+    end
+end
+
 local function ScanEquip()
     local t = {}
     for slot = 1, 19 do
@@ -487,7 +600,7 @@ end
 
 H.BAG_UPDATE = QueueBags
 H.PLAYERBANKSLOTS_CHANGED = QueueBags
-function H.BANKFRAME_OPENED() bankOpen = true; QueueBags() end
+function H.BANKFRAME_OPENED() bankOpen = true; CreateBankButtons(); QueueBags() end
 function H.BANKFRAME_CLOSED() bankOpen = false end
 function H.PLAYER_EQUIPMENT_CHANGED() ScanEquip(); QueueBags() end
 H.BAG_CONTAINER_UPDATE = QueueBags
@@ -539,6 +652,10 @@ SlashCmdList.FITP = function(msg)
             total = total + (c.gold or 0)
         end
         Msg("Total  %s", Coin(total))
+    elseif cmd == "deposit" then
+        MoveMatching(BAGS, BANK, "deposit")
+    elseif cmd == "withdraw" then
+        MoveMatching(BANK, BAGS, "withdraw")
     elseif cmd == "bags" then
         local function show(label, list)
             local parts = {}
@@ -571,6 +688,6 @@ SlashCmdList.FITP = function(msg)
         end
         Msg("no character named %s.", arg)
     else
-        Msg("/fitp scan  |  /fitp auto  |  /fitp gold  |  /fitp bags  |  /fitp forget Name[-Realm]")
+        Msg("/fitp scan  |  /fitp auto  |  /fitp gold  |  /fitp deposit  |  /fitp withdraw  |  /fitp bags  |  /fitp forget Name[-Realm]")
     end
 end
