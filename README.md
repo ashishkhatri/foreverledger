@@ -6,7 +6,7 @@ A minimalist WoW Forever addon that does three things:
 
 1. **Alt inventory on tooltips.** Hover any item to see how many each of your characters has, with an icon for where it is: bags, bank, mail or equipped. Hover your gold (the backpack button, or the coins at the bottom of your bags) to see every character's gold and a total.
 2. **Auction house prices on tooltips.** While the auction house is open, Forever Item Tracker PLUS runs a full scan (at most once every 15 minutes, the server's limit), with a small progress bar above the auction house window. Stay at the auction house until it says the scan is complete. Tradeable items then show the lowest buyout per unit from the last scan and how long ago it ran. The age turns red after 12 hours.
-3. **Bank restocking.** At the bank, **Deposit matching** (below the bank window) moves every item in your bags that the bank already has into the bank. **Withdraw matching** moves every item in your bank that your bags already have into your bags.
+3. **Ctrl+click banking.** With the bank open, Ctrl+click an item in your bags to move every stack of it into the bank, or Ctrl+click it in the bank to move every stack into your bags.
 
 ## Install
 
@@ -25,8 +25,8 @@ Use `/fitp` or `/itemtracker`.
 | `/fitp scan` | Scan the auction house now (it must be open) |
 | `/fitp auto` | Turn automatic scanning on or off |
 | `/fitp gold` | Print every character's gold to chat |
-| `/fitp deposit` | Same as the Deposit matching button (bank must be open) |
-| `/fitp withdraw` | Same as the Withdraw matching button (bank must be open) |
+| `/fitp deposit` | Move every bag item the bank already has into the bank (bank must be open) |
+| `/fitp withdraw` | Move every bank item your bags already have into your bags (bank must be open) |
 | `/fitp bags` | List the bag containers being scanned |
 | `/fitp forget Name[-Realm]` | Remove a character |
 
