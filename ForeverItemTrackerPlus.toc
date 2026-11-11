@@ -1,5 +1,6 @@
 ## Interface: 16001
 ## Title: Forever Item Tracker PLUS
+## IconTexture: Interface\AddOns\ForeverItemTrackerPlus\media\icon
 ## Notes: Alt item and gold counts plus last auction house price, shown on tooltips.
 ## Author: ashishkhatri
 ## Version: 1.6.0
