@@ -8,6 +8,7 @@ local MIN_RESCAN = 15 * 60     -- the server allows one full scan per 15 minutes
 
 local DB, me, realm, priceKey
 local bankOpen, ahOpen, scanning, awaiting, ticker
+local merchantOpen, selling
 
 local LOCS = { "bags", "bank", "mail", "equip" }
 -- Flat white icons, tinted here: |Tpath:h:w:x:y:texW:texH:left:right:top:bottom:r:g:b|t
@@ -261,7 +262,64 @@ local function ClickedBag(itemLocation)
     return parent.GetID and parent:GetID()
 end
 
+-- Ctrl+right-click an item in your bags at a vendor: every stack of it in
+-- your bags is sold, one stack at a time, then the total is printed.
+local function SellAll(id)
+    if selling then return end
+    local _, link, _, _, _, _, _, _, _, _, price = ItemInfo(id)
+    if not price or price <= 0 then
+        Msg("%s can't be sold to a vendor.", link or "that item")
+        return
+    end
+    local queue = {}
+    for _, bag in ipairs(BAGS) do
+        local ok, slots = pcall(NumSlots, bag)
+        for slot = 1, (ok and slots or 0) do
+            if SlotItem(bag, slot) == id then queue[#queue + 1] = { bag, slot } end
+        end
+    end
+    if #queue == 0 then return end
+    selling = true
+    local before = GetMoney()
+    local i = 1
+    local sellTicker
+    local function finish()
+        if sellTicker then sellTicker:Cancel() end
+        C_Timer.After(0.6, function()                   -- let the last sale land
+            selling = false
+            local left = 0
+            for _, q in ipairs(queue) do
+                if SlotItem(q[1], q[2]) == id then left = left + 1 end
+            end
+            local sold = #queue - left
+            local gained = GetMoney() - before
+            Msg("sold %d stack%s of %s%s%s", sold, sold == 1 and "" or "s", link or "it",
+                gained > 0 and (" for " .. Coin(gained)) or "",
+                left > 0 and string.format("; %d not sold.", left) or ".")
+            QueueBags()
+        end)
+    end
+    sellTicker = C_Timer.NewTicker(0.15, function()
+        if not merchantOpen then finish() return end
+        local q = queue[i]
+        if not q then finish() return end
+        if SlotLocked(q[1], q[2]) then return end    -- try again next tick
+        if SlotItem(q[1], q[2]) == id then UseItem(q[1], q[2]) end
+        i = i + 1
+    end)
+end
+
 local function OnModifiedItemClick(link, itemLocation)
+    if merchantOpen and IsControlKeyDown() and not IsShiftKeyDown() and not IsAltKeyDown()
+        and GetMouseButtonClicked and GetMouseButtonClicked() == "RightButton" then
+        local id = LinkID(link)
+        local bag = id and ClickedBag(itemLocation)
+        if bag and not BANKSET[bag] then
+            if DressUpFrame and DressUpFrame:IsShown() and HideUIPanel then HideUIPanel(DressUpFrame) end
+            SellAll(id)
+        end
+        return
+    end
     if not bankOpen or not IsControlKeyDown() or IsShiftKeyDown() or IsAltKeyDown() then return end
     local id = LinkID(link)
     local bag = id and ClickedBag(itemLocation)
@@ -649,6 +707,8 @@ H.BAG_UPDATE = QueueBags
 H.PLAYERBANKSLOTS_CHANGED = QueueBags
 function H.BANKFRAME_OPENED() bankOpen = true; CreateBankButtons(); QueueBags() end
 function H.BANKFRAME_CLOSED() bankOpen = false end
+function H.MERCHANT_SHOW() merchantOpen = true end
+function H.MERCHANT_CLOSED() merchantOpen = false end
 function H.PLAYER_EQUIPMENT_CHANGED() ScanEquip(); QueueBags() end
 H.BAG_CONTAINER_UPDATE = QueueBags
 function H.PLAYER_MONEY() Me().gold = GetMoney() end
