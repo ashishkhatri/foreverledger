@@ -285,19 +285,34 @@ local function SellAll(id)
     local sellTicker
     local function finish()
         if sellTicker then sellTicker:Cancel() end
-        C_Timer.After(0.6, function()                   -- let the last sale land
-            selling = false
-            local left = 0
+        -- sales land a moment after each click, so count only once the bags
+        -- have settled: nothing locked and no change for half a second (or
+        -- 4 seconds at most)
+        local waited, lastLeft, still = 0, -1, 0
+        local function report()
+            local left, busy = 0, false
             for _, q in ipairs(queue) do
-                if SlotItem(q[1], q[2]) == id then left = left + 1 end
+                if SlotItem(q[1], q[2]) == id then
+                    left = left + 1
+                    if SlotLocked(q[1], q[2]) then busy = true end
+                end
             end
+            still = (left == lastLeft and not busy) and still + 0.25 or 0
+            lastLeft = left
+            waited = waited + 0.25
+            if left > 0 and still < 0.5 and waited < 4 then
+                C_Timer.After(0.25, report)
+                return
+            end
+            selling = false
             local sold = #queue - left
             local gained = GetMoney() - before
             Msg("sold %d stack%s of %s%s%s", sold, sold == 1 and "" or "s", link or "it",
                 gained > 0 and (" for " .. Coin(gained)) or "",
                 left > 0 and string.format("; %d not sold.", left) or ".")
             QueueBags()
-        end)
+        end
+        C_Timer.After(0.25, report)
     end
     sellTicker = C_Timer.NewTicker(0.15, function()
         if not merchantOpen then finish() return end
