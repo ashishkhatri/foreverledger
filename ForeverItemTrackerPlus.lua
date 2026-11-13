@@ -689,7 +689,117 @@ end
 ---------------------------------------------------------------------------
 local H = {}
 
+---------------------------------------------------------------------------
+-- Crafting cost on the professions window: the selected recipe's reagents
+-- at the last AH scan's prices, what the result sells for, and the profit.
+-- Works with the trade skill window and the enchanting (craft) window.
+---------------------------------------------------------------------------
+local AH_CUT = 0.05                        -- the auction house keeps 5% of a sale
+
+local function CostLine(parent, anchor)
+    local t = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    t:SetJustifyH("LEFT")
+    t:SetWidth(290)
+    if anchor then
+        t:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 4, -6)
+    else
+        t:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", 24, 84)
+    end
+    return t
+end
+
+-- api: numReagents(i), reagentInfo(i, r) -> name, tex, need, have, reagentLink(i, r), itemLink(i), numMade(i)
+local function ShowCost(line, index, api)
+    if not index or index == 0 then line:SetText("") return end
+    local p = DB.prices[priceKey]
+    if not (p and p.time) then
+        line:SetText("|cffffd100Crafting cost|r  |cff808080scan the auction house first|r")
+        return
+    end
+    local total, missing = 0, {}
+    local n = api.numReagents(index) or 0
+    for r = 1, n do
+        local name, _, need = api.reagentInfo(index, r)
+        local id = LinkID(api.reagentLink(index, r))
+        local each = id and p.items[id]
+        if each then
+            total = total + each * (need or 1)
+        else
+            missing[#missing + 1] = name or "?"
+        end
+    end
+    local text = "|cffffd100Crafting cost|r  " .. Coin(total)
+    if #missing > 0 then
+        text = text .. "  |cff808080(+ " .. table.concat(missing, ", ") .. ": not on the AH)|r"
+    end
+    -- what it sells for, after the AH's cut
+    local made = api.itemLink and LinkID(api.itemLink(index))
+    local value = made and p.items[made]
+    if value then
+        local lo, hi = 1, 1
+        if api.numMade then lo, hi = api.numMade(index) end
+        local count = ((lo or 1) + (hi or lo or 1)) / 2
+        local net = math.floor(value * count * (1 - AH_CUT))
+        local profit = net - total
+        text = text .. "\n|cffffd100Sells for|r  " .. Coin(net) .. " after AH cut   "
+            .. (profit >= 0 and ("|cff33ff33+" .. Coin(profit) .. "|r") or ("|cffff3333-" .. Coin(-profit) .. "|r"))
+            .. (#missing > 0 and " |cff808080(before the missing reagents)|r" or "")
+    end
+    local age = time() - p.time
+    text = text .. "\n|cff808080prices from the AH scan " .. (age > STALE and "|cffff3333" or "") .. Ago(age) .. "|r"
+    line:SetText(text)
+end
+
+local tradeLine, craftLine
+local TRADE_API = {
+    numReagents = function(i) return GetTradeSkillNumReagents(i) end,
+    reagentInfo = function(i, r) return GetTradeSkillReagentInfo(i, r) end,
+    reagentLink = function(i, r) return GetTradeSkillReagentItemLink(i, r) end,
+    itemLink = function(i) return GetTradeSkillItemLink(i) end,
+    numMade = function(i) return GetTradeSkillNumMade(i) end,
+}
+local CRAFT_API = {
+    numReagents = function(i) return GetCraftNumReagents(i) end,
+    reagentInfo = function(i, r) return GetCraftReagentInfo(i, r) end,
+    reagentLink = function(i, r) return GetCraftReagentItemLink(i, r) end,
+    itemLink = function(i) return GetCraftItemLink and GetCraftItemLink(i) end,
+}
+
+local function RefreshTrade()
+    if tradeLine and TradeSkillFrame and TradeSkillFrame:IsShown() and GetTradeSkillSelectionIndex then
+        pcall(ShowCost, tradeLine, GetTradeSkillSelectionIndex(), TRADE_API)
+    end
+end
+local function RefreshCraft()
+    if craftLine and CraftFrame and CraftFrame:IsShown() and GetCraftSelectionIndex then
+        pcall(ShowCost, craftLine, GetCraftSelectionIndex(), CRAFT_API)
+    end
+end
+
+local function HookProfessions()
+    if TradeSkillFrame and not tradeLine and GetTradeSkillReagentInfo then
+        -- under the reagents, inside the scrolling recipe details
+        tradeLine = CostLine(_G.TradeSkillDetailScrollChildFrame or TradeSkillFrame,
+            _G.TradeSkillReagent7 or _G.TradeSkillDetailScrollFrame)
+        if TradeSkillFrame_SetSelection then hooksecurefunc("TradeSkillFrame_SetSelection", RefreshTrade) end
+        TradeSkillFrame:HookScript("OnShow", RefreshTrade)
+    end
+    if CraftFrame and not craftLine and GetCraftReagentInfo then
+        craftLine = CostLine(_G.CraftDetailScrollChildFrame or CraftFrame,
+            _G.CraftReagent7 or _G.CraftDetailScrollFrame)
+        if CraftFrame_SetSelection then hooksecurefunc("CraftFrame_SetSelection", RefreshCraft) end
+        CraftFrame:HookScript("OnShow", RefreshCraft)
+    end
+end
+
+H.TRADE_SKILL_UPDATE = function() RefreshTrade() end
+H.CRAFT_UPDATE = function() RefreshCraft() end
+
 function H.ADDON_LOADED(name)
+    if name == "Blizzard_TradeSkillUI" or name == "Blizzard_CraftUI" then
+        if DB then HookProfessions() end
+        return
+    end
     if name ~= ADDON then return end
     ForeverItemTrackerPlusDB = ForeverItemTrackerPlusDB or {}
     DB = ForeverItemTrackerPlusDB
@@ -712,6 +822,7 @@ function H.PLAYER_LOGIN()
     HookTooltips()
     if HandleModifiedItemClick then hooksecurefunc("HandleModifiedItemClick", OnModifiedItemClick) end
     HookAllMoney()
+    HookProfessions()                 -- (if the professions windows are already loaded)
 
     for e in pairs(H) do
         if e ~= "ADDON_LOADED" and e ~= "PLAYER_LOGIN" then pcall(H.frame.RegisterEvent, H.frame, e) end
