@@ -792,12 +792,76 @@ local function HookProfessions()
     end
 end
 
+-- The newer professions window (what WoW Forever uses): the recipe's
+-- "schematic" lists its reagent slots and what it makes.
+local modernLine, modernRecipe
+local MODERN_API = {}
+local function Schematic(recipeID)
+    local ok, sch = pcall(C_TradeSkillUI.GetRecipeSchematic, recipeID, false)
+    return ok and sch or nil
+end
+local function BasicSlots(sch)
+    local basic = Enum and Enum.CraftingReagentType and Enum.CraftingReagentType.Basic or 1
+    local slots = {}
+    for _, slot in ipairs(sch and sch.reagentSlotSchematics or {}) do
+        if (slot.reagentType == basic or slot.required) and slot.reagents and slot.reagents[1] then
+            slots[#slots + 1] = slot
+        end
+    end
+    return slots
+end
+MODERN_API.numReagents = function(recipeID) return #BasicSlots(Schematic(recipeID)) end
+MODERN_API.reagentInfo = function(recipeID, r)
+    local slot = BasicSlots(Schematic(recipeID))[r]
+    local id = slot and slot.reagents[1].itemID
+    local name = id and ((C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(id)) or ItemInfo(id))
+    return name, nil, slot and slot.quantityRequired or 1
+end
+MODERN_API.reagentLink = function(recipeID, r)
+    local slot = BasicSlots(Schematic(recipeID))[r]
+    local id = slot and slot.reagents[1].itemID
+    return id and ("item:" .. id) or nil
+end
+MODERN_API.itemLink = function(recipeID)
+    local sch = Schematic(recipeID)
+    return sch and sch.outputItemID and ("item:" .. sch.outputItemID) or nil
+end
+MODERN_API.numMade = function(recipeID)
+    local sch = Schematic(recipeID)
+    return sch and sch.quantityMin or 1, sch and sch.quantityMax or 1
+end
+
+local function RefreshModern()
+    if modernLine and modernRecipe and ProfessionsFrame and ProfessionsFrame:IsShown() then
+        pcall(ShowCost, modernLine, modernRecipe, MODERN_API)
+    end
+end
+
+local function HookModernProfessions()
+    local form = ProfessionsFrame and ProfessionsFrame.CraftingPage and ProfessionsFrame.CraftingPage.SchematicForm
+    if not form or modernLine or not (C_TradeSkillUI and C_TradeSkillUI.GetRecipeSchematic) then return end
+    -- under the reagents, above the "Track Recipe" box
+    modernLine = form:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    modernLine:SetJustifyH("LEFT")
+    modernLine:SetWidth(360)
+    modernLine:SetPoint("BOTTOMLEFT", form, "BOTTOMLEFT", 28, 46)
+    hooksecurefunc(form, "Init", function(_, recipeInfo)
+        modernRecipe = recipeInfo and recipeInfo.recipeID
+        RefreshModern()
+    end)
+    ProfessionsFrame:HookScript("OnShow", RefreshModern)
+end
+
 H.TRADE_SKILL_UPDATE = function() RefreshTrade() end
 H.CRAFT_UPDATE = function() RefreshCraft() end
 
 function H.ADDON_LOADED(name)
     if name == "Blizzard_TradeSkillUI" or name == "Blizzard_CraftUI" then
         if DB then HookProfessions() end
+        return
+    end
+    if name == "Blizzard_Professions" then
+        if DB then HookModernProfessions() end
         return
     end
     if name ~= ADDON then return end
@@ -823,6 +887,7 @@ function H.PLAYER_LOGIN()
     if HandleModifiedItemClick then hooksecurefunc("HandleModifiedItemClick", OnModifiedItemClick) end
     HookAllMoney()
     HookProfessions()                 -- (if the professions windows are already loaded)
+    HookModernProfessions()
 
     for e in pairs(H) do
         if e ~= "ADDON_LOADED" and e ~= "PLAYER_LOGIN" then pcall(H.frame.RegisterEvent, H.frame, e) end
