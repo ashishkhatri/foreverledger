@@ -980,10 +980,26 @@ local function TagRow(row)
     local node = data and data.GetData and data:GetData()
     local info = node and node.recipeInfo
     if not row.fitpProfit then
-        row.fitpProfit = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        row.fitpProfit:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+        -- a small hover area around the number (clicks still go to the row)
+        local hover = CreateFrame("Frame", nil, row)
+        hover:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+        hover:SetHeight(14)
+        if hover.SetMouseClickEnabled then
+            hover:SetMouseMotionEnabled(true)
+            hover:SetMouseClickEnabled(false)
+        end
+        hover:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText("Cost")
+            GameTooltip:Show()
+        end)
+        hover:SetScript("OnLeave", GameTooltip_Hide)
+        row.fitpProfit = hover:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        row.fitpProfit:SetPoint("RIGHT")
+        row.fitpHover = hover
     end
     row.fitpProfit:SetText(info and info.recipeID and ProfitText(info.recipeID) or "")
+    row.fitpHover:SetWidth(math.max(1, row.fitpProfit:GetStringWidth()))
 end
 
 local function TagList(scrollBox)
