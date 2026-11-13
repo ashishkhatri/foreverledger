@@ -933,12 +933,15 @@ local function RecipeProfit(recipeID)
     return math.floor(value * count * (1 - AH_CUT) - total + 0.5), #missing > 0
 end
 
--- short money for the narrow list: 1g20s, 35s, 80c
+-- short money for the narrow list, with the coin icons: 1(g)20(s), 35(s), 80(c)
+local GOLD = "|TInterface\\MoneyFrame\\UI-GoldIcon:0:0:1:0|t"
+local SILVER = "|TInterface\\MoneyFrame\\UI-SilverIcon:0:0:1:0|t"
+local COPPER = "|TInterface\\MoneyFrame\\UI-CopperIcon:0:0:1:0|t"
 local function ShortMoney(c)
     local g, sv, cp = math.floor(c / 10000), math.floor(c / 100) % 100, c % 100
-    if g > 0 then return g .. "|cffffd700g|r" .. (g < 10 and sv > 0 and (sv .. "|cffc7c7cfs|r") or "") end
-    if sv > 0 then return sv .. "|cffc7c7cfs|r" end
-    return cp .. "|cffeda55fc|r"
+    if g > 0 then return g .. GOLD .. (g < 10 and sv > 0 and (" " .. sv .. SILVER) or "") end
+    if sv > 0 then return sv .. SILVER end
+    return cp .. COPPER
 end
 
 local profitCache = {}
