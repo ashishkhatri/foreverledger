@@ -696,42 +696,99 @@ local H = {}
 ---------------------------------------------------------------------------
 local AH_CUT = 0.05                        -- the auction house keeps 5% of a sale
 
-local function CostLine(parent, anchor)
-    local t = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    t:SetJustifyH("LEFT")
-    t:SetWidth(290)
-    if anchor then
-        t:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 4, -6)
-    else
-        t:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", 24, 84)
+local function CostLine(parent, point, rel, relPoint, x, y)
+    local f = CreateFrame("Frame", nil, parent)
+    f:SetSize(10, 14)
+    f:SetPoint(point, rel, relPoint, x, y)
+    f:EnableMouse(true)
+    f.text = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    f.text:SetPoint("LEFT")
+    f:SetScript("OnEnter", function(self)
+        if not self.rows then return end
+        GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
+        GameTooltip:AddLine("Crafting cost")
+        for _, r in ipairs(self.rows) do
+            GameTooltip:AddDoubleLine(r[1], r[2], 1, 1, 1, 1, 1, 1)
+        end
+        GameTooltip:Show()
+    end)
+    f:SetScript("OnLeave", GameTooltip_Hide)
+    return f
+end
+
+-- What one of an item costs you: if this character can make it, the cost of
+-- its own reagents (all the way down), otherwise its AH price.
+-- Returns cost (or nil), and adds names to missing / crafted.
+local ItemCost                              -- (recursive, set below)
+ItemCost = function(id, p, missing, crafted, depth, seen)
+    local recipe = Me().crafts and Me().crafts[id]
+    if recipe and depth < 4 and not seen[id] and C_TradeSkillUI and C_TradeSkillUI.GetRecipeSchematic then
+        local ok, sch = pcall(C_TradeSkillUI.GetRecipeSchematic, recipe, false)
+        if ok and sch and sch.reagentSlotSchematics then
+            seen[id] = true
+            local basic = Enum and Enum.CraftingReagentType and Enum.CraftingReagentType.Basic or 1
+            local sum, subMissing = 0, {}
+            for _, slot in ipairs(sch.reagentSlotSchematics) do
+                if (slot.reagentType == basic or slot.required) and slot.reagents and slot.reagents[1] then
+                    local rid = slot.reagents[1].itemID
+                    local c = ItemCost(rid, p, subMissing, crafted, depth + 1, seen)
+                    if c then sum = sum + c * (slot.quantityRequired or 1) end
+                end
+            end
+            seen[id] = nil
+            for _, m in ipairs(subMissing) do missing[#missing + 1] = m end
+            local made = ((sch.quantityMin or 1) + (sch.quantityMax or sch.quantityMin or 1)) / 2
+            local name = (C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(id)) or ItemInfo(id) or "?"
+            crafted[#crafted + 1] = name
+            return sum / math.max(made, 1)
+        end
     end
-    return t
+    local v = p.items[id]
+    if v then return v end
+    missing[#missing + 1] = (C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(id)) or ItemInfo(id) or "?"
+    return nil
 end
 
 -- api: numReagents(i), reagentInfo(i, r) -> name, tex, need, have, reagentLink(i, r), itemLink(i), numMade(i)
 local function ShowCost(line, index, api)
-    if not index or index == 0 then line:SetText("") return end
+    local function set(text, rows)
+        line.text:SetText(text)
+        line:SetWidth(math.max(10, line.text:GetStringWidth()))
+        line.rows = rows
+        if GameTooltip:IsOwned(line) then line:GetScript("OnEnter")(line) end
+    end
+    if not index or index == 0 then set("", nil) return end
     local p = DB.prices[priceKey]
     if not (p and p.time) then
-        line:SetText("|cffffd100Crafting cost|r  |cff808080scan the auction house first|r")
+        set("|cffffd100Crafting cost|r  |cff808080scan the auction house first|r", nil)
         return
     end
-    local total, missing = 0, {}
-    local n = api.numReagents(index) or 0
-    for r = 1, n do
+    local GRAY = "|cff808080"
+    local rows, total, anyMissing = {}, 0, false
+    for r = 1, api.numReagents(index) or 0 do
         local name, _, need = api.reagentInfo(index, r)
+        need = need or 1
         local id = LinkID(api.reagentLink(index, r))
-        local each = id and p.items[id]
+        local missing, crafted = {}, {}
+        local each = id and ItemCost(id, p, missing, crafted, 0, {})
+        local label = need .. " x " .. (name or "?")
+        if #crafted > 0 then label = label .. GRAY .. "  made yourself|r" end
         if each then
-            total = total + each * (need or 1)
+            total = total + each * need
+            local right = Coin(math.floor(each * need + 0.5))
+            if #missing > 0 then right = right .. GRAY .. " +?|r" end
+            rows[#rows + 1] = { label, right }
+            if #missing > 0 then
+                anyMissing = true
+                rows[#rows + 1] = { GRAY .. "    not on the AH: " .. table.concat(missing, ", ") .. "|r", "" }
+            end
         else
-            missing[#missing + 1] = name or "?"
+            anyMissing = true
+            rows[#rows + 1] = { label, GRAY .. "not on the AH|r" }
         end
     end
-    local text = "|cffffd100Crafting cost|r  " .. Coin(total)
-    if #missing > 0 then
-        text = text .. "  |cff808080(+ " .. table.concat(missing, ", ") .. ": not on the AH)|r"
-    end
+    total = math.floor(total + 0.5)
+    rows[#rows + 1] = { "|cffffd100Total|r", Coin(total) .. (anyMissing and (GRAY .. " +?|r") or "") }
     -- what it sells for, after the AH's cut
     local made = api.itemLink and LinkID(api.itemLink(index))
     local value = made and p.items[made]
@@ -741,13 +798,17 @@ local function ShowCost(line, index, api)
         local count = ((lo or 1) + (hi or lo or 1)) / 2
         local net = math.floor(value * count * (1 - AH_CUT))
         local profit = net - total
-        text = text .. "\n|cffffd100Sells for|r  " .. Coin(net) .. " after AH cut   "
-            .. (profit >= 0 and ("|cff33ff33+" .. Coin(profit) .. "|r") or ("|cffff3333-" .. Coin(-profit) .. "|r"))
-            .. (#missing > 0 and " |cff808080(before the missing reagents)|r" or "")
+        rows[#rows + 1] = { " ", " " }
+        rows[#rows + 1] = { "Sells for (after 5% AH cut)", Coin(net) }
+        rows[#rows + 1] = { "Profit", profit >= 0 and ("|cff33ff33+" .. Coin(profit) .. "|r")
+            or ("|cffff3333-" .. Coin(-profit) .. "|r") }
     end
     local age = time() - p.time
-    text = text .. "\n|cff808080prices from the AH scan " .. (age > STALE and "|cffff3333" or "") .. Ago(age) .. "|r"
-    line:SetText(text)
+    local ago = (age > STALE and "|cffff3333" or GRAY) .. Ago(age) .. "|r"
+    rows[#rows + 1] = { " ", " " }
+    rows[#rows + 1] = { GRAY .. "Prices from the AH scan|r", ago }
+    set("|cffffd100Crafting cost|r  " .. Coin(total) .. (anyMissing and (GRAY .. " +?|r") or "")
+        .. "   " .. GRAY .. "scan|r " .. ago, rows)
 end
 
 local tradeLine, craftLine
@@ -779,14 +840,14 @@ end
 local function HookProfessions()
     if TradeSkillFrame and not tradeLine and GetTradeSkillReagentInfo then
         -- under the reagents, inside the scrolling recipe details
-        tradeLine = CostLine(_G.TradeSkillDetailScrollChildFrame or TradeSkillFrame,
-            _G.TradeSkillReagent7 or _G.TradeSkillDetailScrollFrame)
+        local rel = _G.TradeSkillReagent7 or _G.TradeSkillDetailScrollFrame
+        tradeLine = CostLine(_G.TradeSkillDetailScrollChildFrame or TradeSkillFrame, "TOPLEFT", rel, "BOTTOMLEFT", 4, -6)
         if TradeSkillFrame_SetSelection then hooksecurefunc("TradeSkillFrame_SetSelection", RefreshTrade) end
         TradeSkillFrame:HookScript("OnShow", RefreshTrade)
     end
     if CraftFrame and not craftLine and GetCraftReagentInfo then
-        craftLine = CostLine(_G.CraftDetailScrollChildFrame or CraftFrame,
-            _G.CraftReagent7 or _G.CraftDetailScrollFrame)
+        local rel = _G.CraftReagent7 or _G.CraftDetailScrollFrame
+        craftLine = CostLine(_G.CraftDetailScrollChildFrame or CraftFrame, "TOPLEFT", rel, "BOTTOMLEFT", 4, -6)
         if CraftFrame_SetSelection then hooksecurefunc("CraftFrame_SetSelection", RefreshCraft) end
         CraftFrame:HookScript("OnShow", RefreshCraft)
     end
@@ -831,6 +892,21 @@ MODERN_API.numMade = function(recipeID)
     return sch and sch.quantityMin or 1, sch and sch.quantityMax or 1
 end
 
+local function LearnCrafts()
+    if not (C_TradeSkillUI and C_TradeSkillUI.GetAllRecipeIDs) then return end
+    local ok, ids = pcall(C_TradeSkillUI.GetAllRecipeIDs)
+    if not ok or type(ids) ~= "table" then return end
+    local crafts = Me().crafts or {}
+    Me().crafts = crafts
+    for _, rid in ipairs(ids) do
+        local okI, info = pcall(C_TradeSkillUI.GetRecipeInfo, rid)
+        if okI and info and info.learned then
+            local sch = Schematic(rid)
+            if sch and sch.outputItemID then crafts[sch.outputItemID] = rid end
+        end
+    end
+end
+
 local function RefreshModern()
     if modernLine and modernRecipe and ProfessionsFrame and ProfessionsFrame:IsShown() then
         pcall(ShowCost, modernLine, modernRecipe, MODERN_API)
@@ -841,18 +917,18 @@ local function HookModernProfessions()
     local form = ProfessionsFrame and ProfessionsFrame.CraftingPage and ProfessionsFrame.CraftingPage.SchematicForm
     if not form or modernLine or not (C_TradeSkillUI and C_TradeSkillUI.GetRecipeSchematic) then return end
     -- under the reagents, above the "Track Recipe" box
-    modernLine = form:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    modernLine:SetJustifyH("LEFT")
-    modernLine:SetWidth(360)
-    modernLine:SetPoint("BOTTOMLEFT", form, "BOTTOMLEFT", 28, 46)
+    modernLine = CostLine(form, "BOTTOMLEFT", form, "BOTTOMLEFT", 28, 46)
     hooksecurefunc(form, "Init", function(_, recipeInfo)
         modernRecipe = recipeInfo and recipeInfo.recipeID
+        if not form.fitpLearned then form.fitpLearned = true; pcall(LearnCrafts) end
         RefreshModern()
     end)
+    ProfessionsFrame:HookScript("OnShow", function() form.fitpLearned = nil end)
     ProfessionsFrame:HookScript("OnShow", RefreshModern)
 end
 
 H.TRADE_SKILL_UPDATE = function() RefreshTrade() end
+H.TRADE_SKILL_LIST_UPDATE = function() pcall(LearnCrafts); RefreshModern() end
 H.CRAFT_UPDATE = function() RefreshCraft() end
 
 function H.ADDON_LOADED(name)

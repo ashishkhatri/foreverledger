@@ -8,7 +8,7 @@ A minimalist WoW Forever addon that does five things:
 2. **Auction house prices on tooltips.** While the auction house is open, Forever Item Tracker PLUS runs a full scan (at most once every 15 minutes, the server's limit), with a small progress bar above the auction house window. Stay at the auction house until it says the scan is complete. Tradeable items then show the lowest buyout per unit from the last scan and how long ago it ran. The age turns red after 12 hours.
 3. **Bank restocking.** At the bank, the **Deposit** button (bag → bank, below the bank window) moves every item in your bags that the bank already has into the bank, and **Withdraw** (bank → bag) moves every item in your bank that your bags already have into your bags. To move just one item, Ctrl+click it: every stack of it goes to the other side.
 4. **Sell all of an item.** At a vendor, Ctrl+right-click an item in your bags to sell every stack of it you're carrying. The total it sold for is printed in chat.
-5. **Crafting cost.** In your professions window, the selected recipe shows what its reagents cost at the last auction house scan's prices, what the result sells for after the AH's 5% cut, and the profit. Reagents that aren't on the AH (like vendor thread) are listed by name.
+5. **Crafting cost.** In your professions window, the selected recipe shows what its reagents cost at the last auction house scan's prices, with the scan's age beside it. Reagents you can make yourself are priced by what their own reagents cost. Hover the line for a breakdown per reagent, what the result sells for after the AH's 5% cut, and the profit.
 
 ## Install
 
