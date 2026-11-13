@@ -792,6 +792,7 @@ local function ShowCost(line, index, api)
     -- what it sells for, after the AH's cut
     local made = api.itemLink and LinkID(api.itemLink(index))
     local value = made and p.items[made]
+    local headline
     if value then
         local lo, hi = 1, 1
         if api.numMade then lo, hi = api.numMade(index) end
@@ -800,15 +801,17 @@ local function ShowCost(line, index, api)
         local profit = net - total
         rows[#rows + 1] = { " ", " " }
         rows[#rows + 1] = { "Sells for (after 5% AH cut)", Coin(net) }
-        rows[#rows + 1] = { "Profit", profit >= 0 and ("|cff33ff33+" .. Coin(profit) .. "|r")
-            or ("|cffff3333-" .. Coin(-profit) .. "|r") }
+        local shown = profit >= 0 and ("|cff33ff33+" .. Coin(profit) .. "|r") or ("|cffff3333-" .. Coin(-profit) .. "|r")
+        rows[#rows + 1] = { "Profit", shown }
+        headline = "|cffffd100Profit|r  " .. shown .. (anyMissing and (GRAY .. " ?|r") or "")
     end
     local age = time() - p.time
     local ago = (age > STALE and "|cffff3333" or GRAY) .. Ago(age) .. "|r"
     rows[#rows + 1] = { " ", " " }
     rows[#rows + 1] = { GRAY .. "Prices from the AH scan|r", ago }
-    set("|cffffd100Crafting cost|r  " .. Coin(total) .. (anyMissing and (GRAY .. " +?|r") or "")
-        .. "   " .. GRAY .. "scan|r " .. ago, rows)
+    headline = headline or ("|cffffd100Crafting cost|r  " .. Coin(total) .. (anyMissing and (GRAY .. " +?|r") or "")
+        .. GRAY .. "  (no AH price for the result)|r")
+    set(headline .. "   " .. GRAY .. "scan|r " .. ago, rows)
 end
 
 local tradeLine, craftLine
@@ -915,6 +918,20 @@ end
 
 -- Expected profit of one craft of a recipe (nil if the result has no AH
 -- price), and whether some reagent had no price (so the real profit is lower).
+local function RecipeCost(recipeID)
+    local p = DB.prices[priceKey]
+    if not (p and p.time) then return nil end
+    local total, missing, crafted, any = 0, {}, {}, false
+    for r = 1, MODERN_API.numReagents(recipeID) do
+        local _, _, need = MODERN_API.reagentInfo(recipeID, r)
+        local id = LinkID(MODERN_API.reagentLink(recipeID, r))
+        local each = id and ItemCost(id, p, missing, crafted, 0, {})
+        if each then total = total + each * (need or 1); any = true else missing[#missing + 1] = "?" end
+    end
+    if not any then return nil end
+    return math.floor(total + 0.5), #missing > 0
+end
+
 local function RecipeProfit(recipeID)
     local p = DB.prices[priceKey]
     if not (p and p.time) then return nil end
@@ -948,17 +965,16 @@ local profitCache = {}
 local function ProfitText(recipeID)
     local cached = profitCache[recipeID]
     if cached ~= nil then return cached or nil end
-    local ok, profit, partial = pcall(RecipeProfit, recipeID)
+    local ok, cost, partial = pcall(RecipeCost, recipeID)
     local text = false
-    if ok and profit then
-        text = (profit >= 0 and "|cff33ff33+" or "|cffff3333-") .. ShortMoney(math.abs(profit)) .. "|r"
-            .. (partial and "|cff808080?|r" or "")
+    if ok and cost then
+        text = ShortMoney(cost) .. (partial and "|cff808080+?|r" or "")
     end
     profitCache[recipeID] = text
     return text or nil
 end
 
--- put each recipe's profit at the right edge of its row in the recipe list
+-- put each recipe's crafting cost at the right edge of its row in the recipe list
 local function TagRow(row)
     local data = row.GetElementData and row:GetElementData()
     local node = data and data.GetData and data:GetData()
