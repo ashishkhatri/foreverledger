@@ -913,6 +913,66 @@ local function RefreshModern()
     end
 end
 
+-- Expected profit of one craft of a recipe (nil if the result has no AH
+-- price), and whether some reagent had no price (so the real profit is lower).
+local function RecipeProfit(recipeID)
+    local p = DB.prices[priceKey]
+    if not (p and p.time) then return nil end
+    local sch = Schematic(recipeID)
+    if not (sch and sch.outputItemID) then return nil end
+    local value = p.items[sch.outputItemID]
+    if not value then return nil end
+    local total, missing, crafted = 0, {}, {}
+    for r = 1, MODERN_API.numReagents(recipeID) do
+        local _, _, need = MODERN_API.reagentInfo(recipeID, r)
+        local id = LinkID(MODERN_API.reagentLink(recipeID, r))
+        local each = id and ItemCost(id, p, missing, crafted, 0, {})
+        if each then total = total + each * (need or 1) else missing[#missing + 1] = "?" end
+    end
+    local count = ((sch.quantityMin or 1) + (sch.quantityMax or sch.quantityMin or 1)) / 2
+    return math.floor(value * count * (1 - AH_CUT) - total + 0.5), #missing > 0
+end
+
+-- short money for the narrow list: 1g20s, 35s, 80c
+local function ShortMoney(c)
+    local g, sv, cp = math.floor(c / 10000), math.floor(c / 100) % 100, c % 100
+    if g > 0 then return g .. "|cffffd700g|r" .. (g < 10 and sv > 0 and (sv .. "|cffc7c7cfs|r") or "") end
+    if sv > 0 then return sv .. "|cffc7c7cfs|r" end
+    return cp .. "|cffeda55fc|r"
+end
+
+local profitCache = {}
+local function ProfitText(recipeID)
+    local cached = profitCache[recipeID]
+    if cached ~= nil then return cached or nil end
+    local ok, profit, partial = pcall(RecipeProfit, recipeID)
+    local text = false
+    if ok and profit then
+        text = (profit >= 0 and "|cff33ff33+" or "|cffff3333-") .. ShortMoney(math.abs(profit)) .. "|r"
+            .. (partial and "|cff808080?|r" or "")
+    end
+    profitCache[recipeID] = text
+    return text or nil
+end
+
+-- put each recipe's profit at the right edge of its row in the recipe list
+local function TagRow(row)
+    local data = row.GetElementData and row:GetElementData()
+    local node = data and data.GetData and data:GetData()
+    local info = node and node.recipeInfo
+    if not row.fitpProfit then
+        row.fitpProfit = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        row.fitpProfit:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+    end
+    row.fitpProfit:SetText(info and info.recipeID and ProfitText(info.recipeID) or "")
+end
+
+local function TagList(scrollBox)
+    if scrollBox and scrollBox.ForEachFrame then
+        pcall(scrollBox.ForEachFrame, scrollBox, function(row) pcall(TagRow, row) end)
+    end
+end
+
 local function HookModernProfessions()
     local form = ProfessionsFrame and ProfessionsFrame.CraftingPage and ProfessionsFrame.CraftingPage.SchematicForm
     if not form or modernLine or not (C_TradeSkillUI and C_TradeSkillUI.GetRecipeSchematic) then return end
@@ -923,12 +983,28 @@ local function HookModernProfessions()
         if not form.fitpLearned then form.fitpLearned = true; pcall(LearnCrafts) end
         RefreshModern()
     end)
-    ProfessionsFrame:HookScript("OnShow", function() form.fitpLearned = nil end)
+    ProfessionsFrame:HookScript("OnShow", function() form.fitpLearned = nil; wipe(profitCache) end)
+    local list = ProfessionsFrame.CraftingPage.RecipeList
+    local box = list and list.ScrollBox
+    if box then
+        if ScrollUtil and ScrollUtil.AddAcquiredFrameCallback then
+            ScrollUtil.AddAcquiredFrameCallback(box, function(_, row) pcall(TagRow, row) end, list, true)
+        end
+        if box.Update then hooksecurefunc(box, "Update", function() TagList(box) end) end
+        if box.FullUpdate then hooksecurefunc(box, "FullUpdate", function() TagList(box) end) end
+    end
     ProfessionsFrame:HookScript("OnShow", RefreshModern)
 end
 
 H.TRADE_SKILL_UPDATE = function() RefreshTrade() end
-H.TRADE_SKILL_LIST_UPDATE = function() pcall(LearnCrafts); RefreshModern() end
+H.TRADE_SKILL_LIST_UPDATE = function()
+    pcall(LearnCrafts)
+    wipe(profitCache)
+    RefreshModern()
+    local box = ProfessionsFrame and ProfessionsFrame.CraftingPage and ProfessionsFrame.CraftingPage.RecipeList
+        and ProfessionsFrame.CraftingPage.RecipeList.ScrollBox
+    if box then TagList(box) end
+end
 H.CRAFT_UPDATE = function() RefreshCraft() end
 
 function H.ADDON_LOADED(name)
