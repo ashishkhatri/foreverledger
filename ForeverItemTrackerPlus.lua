@@ -675,22 +675,46 @@ local function AddVendorLine(tt, id)
     end
 end
 
+-- where the hovered item is sitting, when that's one of your own slots:
+-- "bags" or "bank" for a bag / bank slot, "equip" for a character slot
+local function HoverLocation(tt)
+    local owner = tt.GetOwner and tt:GetOwner()
+    if not owner then return nil end
+    local ok, bag = pcall(function() return owner.GetBagID and owner:GetBagID() end)
+    if ok and bag then return BANKSET[bag] and "bank" or "bags" end
+    local name = owner.GetName and owner:GetName()
+    if name and name:match("^Character.+Slot$") then return "equip" end
+    return nil
+end
+
 local function AddItemLines(tt, id)
     local started, total, rows = false, 0, 0
+    local list = {}
     for _, k in ipairs(SortedChars()) do
         local c = DB.chars[k]
-        local parts, sum = {}, 0
+        local parts, sum, where = {}, 0, {}
         for _, loc in ipairs(LOCS) do
             local n = c[loc] and c[loc][id]
             if n and n > 0 then
                 parts[#parts + 1] = ICON[loc] .. " " .. n
                 sum = sum + n
+                where[#where + 1] = loc
             end
         end
-        if sum > 0 then
+        if sum > 0 then list[#list + 1] = { c = c, parts = parts, sum = sum, where = where } end
+    end
+    -- nothing new to say: only you have it, all of it in the very place you're
+    -- looking at (e.g. your one Peacebloom, hovered in your bags)
+    local hidden = false
+    if #list == 1 and list[1].c == Me() and #list[1].where == 1 then
+        local here = HoverLocation(tt)
+        hidden = here ~= nil and here == list[1].where[1]
+    end
+    if not hidden then
+        for _, row in ipairs(list) do
             if not started then tt:AddLine(" "); started = true end
-            tt:AddDoubleLine(ColoredName(c), table.concat(parts, "   "), 1, 1, 1, 1, 1, 1)
-            total, rows = total + sum, rows + 1
+            tt:AddDoubleLine(ColoredName(row.c), table.concat(row.parts, "   "), 1, 1, 1, 1, 1, 1)
+            total, rows = total + row.sum, rows + 1
         end
     end
 
