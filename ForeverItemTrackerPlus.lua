@@ -796,8 +796,8 @@ AddCrateLine = function(tt, id)
     local label = "Cheapest fill " .. (age > STALE and "|cffff3333" or "|cff808080") .. Ago(age) .. "|r"
     if best then
         tt:AddDoubleLine(label, Coin(math.floor(best + 0.5)), 1, .82, 0, 1, 1, 1)
-        tt:AddDoubleLine("|cff808080   " .. bestFill[1] .. " x " .. bestFill[3]
-            .. (bestCrafted and " (made yourself)" or "") .. "|r", " ", 1, 1, 1, 1, 1, 1)
+        tt:AddDoubleLine("   " .. bestFill[1] .. " x " .. bestFill[3]
+            .. (bestCrafted and " |cff808080(made yourself)|r" or ""), " ", 1, 1, 1, 1, 1, 1)
     else
         tt:AddDoubleLine(label, "|cff808080none of its fills are on the AH|r", 1, .82, 0, 1, 1, 1)
     end
