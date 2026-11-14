@@ -687,7 +687,6 @@ local function AddItemLines(tt, id)
             total, rows = total + sum, rows + 1
         end
     end
-    if rows > 1 then tt:AddDoubleLine("Total", total, .6, .6, .6, .6, .6, .6) end
 
     local bind = ItemInfo and select(14, ItemInfo(id))
     if bind == 1 or bind == 4 then -- bind on pickup / quest items can't be sold, but can be disenchanted
