@@ -642,6 +642,9 @@ local function DisenchantValue(id, p)
     return math.floor(v + 0.5), partial
 end
 
+local ItemCost                              -- crafting cost of an item (defined with the professions code)
+local AddCrateLine                          -- Waylaid Crates (defined below)
+
 local function AddDisenchantLine(tt, id)
     local p = DB.prices[priceKey]
     if not (p and p.time) then return end
@@ -711,8 +714,92 @@ local function AddItemLines(tt, id)
         local v = p.items[id]
         tt:AddDoubleLine(label, v and Coin(v) or "|cff808080none listed|r", 1, .82, 0, 1, 1, 1)
         AddDisenchantLine(tt, id)
+        AddCrateLine(tt, id)
     else
         tt:AddDoubleLine("AH", "|cff808080no scan yet|r", 1, .82, 0, 1, 1, 1)
+    end
+end
+
+---------------------------------------------------------------------------
+-- Waylaid Crates: each takes ONE of several fills (e.g. 20 Peacebloom or
+-- 10 Briarthorn). The tooltip shows the cheapest one at the last AH scan's
+-- prices, or what it costs to craft if you can make it for less.
+-- (Crate contents from foreverdiff.com; fill items by ID, double-checked by
+-- name in game where the item is known.)
+---------------------------------------------------------------------------
+local CRATES = {
+    [248685] = { { 20, 10940, "Strange Dust" }, { 4, 10939, "Greater Magic Essence" }, { 6, 10978, "Small Glimmering Shard" }, { 2, 11084, "Large Glimmering Shard" } },
+    [248702] = { { 2, 4231, "Cured Light Hide" }, { 20, 2996, "Bolt of Linen Cloth" } },
+    [248682] = { { 20, 2447, "Peacebloom" }, { 20, 765, "Silverleaf" }, { 10, 2449, "Earthroot" }, { 10, 785, "Mageroyal" }, { 10, 2450, "Briarthorn" } },
+    [248703] = { { 20, 2840, "Copper Bar" }, { 20, 3576, "Tin Bar" }, { 10, 2841, "Bronze Bar" } },
+    [248683] = { { 20, 2770, "Copper Ore" }, { 20, 2771, "Tin Ore" } },
+    [248704] = { { 16, 4359, "Handful of Copper Bolts" }, { 16, 4361, "Copper Tube" }, { 4, 4363, "Copper Modulator" } },
+    [248684] = { { 40, 2589, "Linen Cloth" }, { 20, 2318, "Light Leather" } },
+    [248689] = { { 20, 11083, "Soul Dust" }, { 4, 11082, "Greater Astral Essence" }, { 6, 11138, "Small Glowing Shard" }, { 2, 11139, "Large Glowing Shard" } },
+    [248705] = { { 6, 2997, "Bolt of Woolen Cloth" }, { 10, 4305, "Bolt of Silk Cloth" }, { 2, 4233, "Cured Medium Hide" } },
+    [248686] = { { 10, 3820, "Stranglekelp" }, { 10, 2453, "Bruiseweed" }, { 10, 3355, "Wild Steelbloom" }, { 10, 3369, "Grave Moss" }, { 10, 3356, "Kingsblood" } },
+    [248706] = { { 10, 2842, "Silver Bar" }, { 20, 3575, "Iron Bar" } },
+    [248687] = { { 10, 2775, "Silver Ore" }, { 20, 2772, "Iron Ore" } },
+    [248707] = { { 8, 4371, "Bronze Tube" }, { 7, 4375, "Whirring Bronze Gizmo" }, { 4, 4382, "Bronze Framework" }, { 45, 10558, "Gold Power Core" } },
+    [248688] = { { 20, 2592, "Wool Cloth" }, { 40, 4306, "Silk Cloth" }, { 20, 2319, "Medium Leather" } },
+    [248690] = { { 20, 3357, "Liferoot" }, { 10, 3818, "Fadeleaf" }, { 10, 3821, "Goldthorn" }, { 10, 3358, "Khadgar's Whisker" } },
+    [248694] = { { 20, 11137, "Vision Dust" }, { 4, 11135, "Greater Mystic Essence" }, { 6, 11177, "Small Radiant Shard" }, { 2, 11178, "Large Radiant Shard" } },
+    [248708] = { { 8, 4339, "Bolt of Mageweave" }, { 2, 4236, "Cured Heavy Hide" } },
+    [248709] = { { 20, 3860, "Mithril Bar" }, { 15, 3859, "Steel Bar" }, { 10, 3577, "Gold Bar" } },
+    [248692] = { { 10, 2776, "Gold Ore" }, { 20, 3858, "Mithril Ore" } },
+    [248710] = { { 8, 4387, "Iron Strut" }, { 5, 10559, "Mithril Tube" }, { 12, 10560, "Unstable Trigger" }, { 5, 10561, "Mithril Casing" } },
+    [248693] = { { 40, 4338, "Mageweave Cloth" }, { 20, 4234, "Heavy Leather" } },
+    [248691] = { { 10, 3819, "Wintersbite" }, { 10, 4625, "Firebloom" }, { 20, 8831, "Purple Lotus" }, { 10, 8836, "Arthas' Tears" } },
+    [248699] = { { 20, 11176, "Dream Dust" }, { 4, 11175, "Greater Nether Essence" }, { 6, 14343, "Small Brilliant Shard" }, { 2, 14344, "Large Brilliant Shard" } },
+    [248711] = { { 8, 14048, "Bolt of Runecloth" }, { 2, 8172, "Cured Thick Hide" } },
+    [248712] = { { 2, 11371, "Dark Iron Bar" }, { 10, 6037, "Truesilver Bar" }, { 20, 12359, "Thorium Bar" } },
+    [248697] = { { 10, 7911, "Truesilver Ore" }, { 20, 10620, "Thorium Ore" }, { 20, 11370, "Dark Iron Ore" } },
+    [248713] = { { 5, 15994, "Thorium Widget" }, { 5, 18631, "Truesilver Transformer" }, { 2, 16000, "Thorium Tube" } },
+    [248698] = { { 40, 14047, "Runecloth" }, { 20, 4304, "Thick Leather" }, { 20, 8170, "Rugged Leather" } },
+    [248695] = { { 10, 13464, "Golden Sansam" }, { 20, 8838, "Sungrass" }, { 10, 8839, "Blindweed" }, { 10, 8845, "Ghost Mushroom" }, { 10, 8846, "Gromsblood" } },
+    [248696] = { { 20, 13463, "Dreamfoil" }, { 20, 13465, "Mountain Silversage" }, { 20, 13466, "Plaguebloom" }, { 20, 13467, "Icecap" } },
+}
+
+-- the item ID for a fill, checked against its name when the game knows it
+local function FillID(f)
+    local id, name = f[2], f[3]
+    local known = C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(id)
+    if known == name then return id end
+    local lookup = GetItemInfo or (C_Item and C_Item.GetItemInfo)
+    if lookup then                              -- our ID is off or unknown: look it up by name
+        local ok, _, link = pcall(lookup, name)
+        local byName = ok and LinkID(link)
+        if byName then return byName end
+    end
+    return id
+end
+
+AddCrateLine = function(tt, id)
+    local fills = CRATES[id]
+    if not fills then return end
+    local p = DB.prices[priceKey]
+    if not (p and p.time) then return end
+    local best, bestFill, bestCrafted
+    for _, f in ipairs(fills) do
+        local fid = FillID(f)
+        local each, crafted = p.items[fid], false
+        if Me().crafts and Me().crafts[fid] then          -- you can make it: is that cheaper?
+            local ok, c = pcall(ItemCost, fid, p, {}, {}, 0, {})
+            if ok and c and (not each or c < each) then each, crafted = c, true end
+        end
+        if each then
+            local total = each * f[1]
+            if not best or total < best then best, bestFill, bestCrafted = total, f, crafted end
+        end
+    end
+    local age = time() - p.time
+    local label = "Cheapest fill " .. (age > STALE and "|cffff3333" or "|cff808080") .. Ago(age) .. "|r"
+    if best then
+        tt:AddDoubleLine(label, Coin(math.floor(best + 0.5)), 1, .82, 0, 1, 1, 1)
+        tt:AddDoubleLine("|cff808080   " .. bestFill[1] .. " x " .. bestFill[3]
+            .. (bestCrafted and " (made yourself)" or "") .. "|r", " ", 1, 1, 1, 1, 1, 1)
+    else
+        tt:AddDoubleLine(label, "|cff808080none of its fills are on the AH|r", 1, .82, 0, 1, 1, 1)
     end
 end
 
@@ -844,7 +931,6 @@ end
 -- What one of an item costs you: if this character can make it, the cost of
 -- its own reagents (all the way down), otherwise its AH price.
 -- Returns cost (or nil), and adds names to missing / crafted.
-local ItemCost                              -- (recursive, set below)
 ItemCost = function(id, p, missing, crafted, depth, seen)
     local recipe = Me().crafts and Me().crafts[id]
     if recipe and depth < 4 and not seen[id] and C_TradeSkillUI and C_TradeSkillUI.GetRecipeSchematic then
