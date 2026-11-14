@@ -647,10 +647,13 @@ local function AddDisenchantLine(tt, id)
     if not (p and p.time) then return end
     local ok, v, partial = pcall(DisenchantValue, id, p)
     if not ok then return end
+    -- labelled with the scan's age, like the AH line (red once it's stale)
+    local age = time() - p.time
+    local label = "Disenchant " .. (age > STALE and "|cffff3333" or "|cff808080") .. Ago(age) .. "|r"
     if v then
-        tt:AddDoubleLine("Disenchant |cff808080avg|r", Coin(v) .. (partial and "|cff808080 +?|r" or ""), 1, .82, 0, 1, 1, 1)
+        tt:AddDoubleLine(label, Coin(v) .. (partial and "|cff808080 +?|r" or ""), 1, .82, 0, 1, 1, 1)
     elseif partial then
-        tt:AddDoubleLine("Disenchant |cff808080avg|r", "|cff808080materials not on the AH|r", 1, .82, 0, 1, 1, 1)
+        tt:AddDoubleLine(label, "|cff808080materials not on the AH|r", 1, .82, 0, 1, 1, 1)
     end
 end
 
