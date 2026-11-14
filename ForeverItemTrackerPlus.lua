@@ -723,13 +723,13 @@ local function AddItemLines(tt, id)
         local vendor = sellMoved and (tt.fitpSellPrice or (ItemInfo and select(11, ItemInfo(id))))
         local de = DisenchantOutcomes(id) and DB.prices[priceKey]
         if (vendor and vendor > 0) or de then
-            if not started then tt:AddLine(" ") end
+            tt:AddLine(" ")                        -- a gap before the prices
             AddVendorLine(tt, id)
             if de then AddDisenchantLine(tt, id) end
         end
         return
     end
-    if not started then tt:AddLine(" ") end
+    tt:AddLine(" ")                                -- a gap before the prices
     AddVendorLine(tt, id)
     local p = DB.prices[priceKey]
     if p and p.time then
