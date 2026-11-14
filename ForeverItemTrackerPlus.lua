@@ -657,6 +657,18 @@ end
 ---------------------------------------------------------------------------
 -- Tooltips
 ---------------------------------------------------------------------------
+-- the game's "Sell Price" line, moved down here just above the AH price
+-- (only once the game's own line has been taken over, so it's never shown twice)
+local sellMoved = false
+local function AddVendorLine(tt, id)
+    if not sellMoved then return end
+    local price = tt.fitpSellPrice
+    if price == nil then price = ItemInfo and select(11, ItemInfo(id)) end
+    if price and price > 0 then
+        tt:AddDoubleLine("Vendor", Coin(price), 1, .82, 0, 1, 1, 1)
+    end
+end
+
 local function AddItemLines(tt, id)
     local started, total, rows = false, 0, 0
     for _, k in ipairs(SortedChars()) do
@@ -679,13 +691,17 @@ local function AddItemLines(tt, id)
 
     local bind = ItemInfo and select(14, ItemInfo(id))
     if bind == 1 or bind == 4 then -- bind on pickup / quest items can't be sold, but can be disenchanted
-        if DisenchantOutcomes(id) and DB.prices[priceKey] then
+        local vendor = sellMoved and (tt.fitpSellPrice or (ItemInfo and select(11, ItemInfo(id))))
+        local de = DisenchantOutcomes(id) and DB.prices[priceKey]
+        if (vendor and vendor > 0) or de then
             if not started then tt:AddLine(" ") end
-            AddDisenchantLine(tt, id)
+            AddVendorLine(tt, id)
+            if de then AddDisenchantLine(tt, id) end
         end
         return
     end
     if not started then tt:AddLine(" ") end
+    AddVendorLine(tt, id)
     local p = DB.prices[priceKey]
     if p and p.time then
         local age = time() - p.time
@@ -714,9 +730,20 @@ local function HookTooltips()
         and Enum and Enum.TooltipDataType and Enum.TooltipDataType.Item
     if useProcessor then
         TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, OnItemTooltip)
+        -- the game's "Sell Price" line: keep its amount (it's for the whole
+        -- stack), skip drawing it there; it's shown above the AH price instead
+        local sellType = Enum.TooltipDataLineType and Enum.TooltipDataLineType.SellPrice
+        if sellType and TooltipDataProcessor.AddLinePreCall then
+            TooltipDataProcessor.AddLinePreCall(sellType, function(tt, lineData)
+                if tt ~= GameTooltip and tt ~= ItemRefTooltip then return end
+                tt.fitpSellPrice = lineData and lineData.price or 0
+                return true                       -- handled: the game doesn't add its own line
+            end)
+            sellMoved = true
+        end
     end
     for _, tt in ipairs({ GameTooltip, ItemRefTooltip }) do
-        tt:HookScript("OnTooltipCleared", function(self) self.fitpDone = nil end)
+        tt:HookScript("OnTooltipCleared", function(self) self.fitpDone = nil; self.fitpSellPrice = nil end)
         if not useProcessor then tt:HookScript("OnTooltipSetItem", OnItemTooltip) end
     end
 end
