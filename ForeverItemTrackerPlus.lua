@@ -566,6 +566,95 @@ local function OnScanData()
 end
 
 ---------------------------------------------------------------------------
+-- Disenchanting: what an armor or weapon piece is worth on average when
+-- disenchanted, from the Classic disenchant tables (by item level, quality,
+-- and armor vs weapon) and the materials' prices from the last AH scan.
+---------------------------------------------------------------------------
+local M = {
+    STRANGE = 10940, SOUL = 11083, VISION = 11137, DREAM = 11176, ILLUSION = 16204,
+    LMAGIC = 10938, GMAGIC = 10939, LASTRAL = 10998, GASTRAL = 11082, LMYSTIC = 11134,
+    GMYSTIC = 11135, LNETHER = 11174, GNETHER = 11175, LETERNAL = 16202, GETERNAL = 16203,
+    SGLIMMER = 10978, LGLIMMER = 11084, SGLOW = 11138, LGLOW = 11139, SRADIANT = 11177,
+    LRADIANT = 11178, SBRILLIANT = 14343, LBRILLIANT = 14344, NEXUS = 20725,
+}
+-- uncommon: up to item level, { dust, min, max }, { essence, min, max }, shard
+local DE_UNCOMMON = {
+    { 15, { M.STRANGE, 1, 2 }, { M.LMAGIC, 1, 2 } },
+    { 20, { M.STRANGE, 2, 3 }, { M.GMAGIC, 1, 2 }, M.SGLIMMER },
+    { 25, { M.STRANGE, 4, 6 }, { M.LASTRAL, 1, 2 }, M.SGLIMMER },
+    { 30, { M.SOUL, 1, 2 }, { M.GASTRAL, 1, 2 }, M.LGLIMMER },
+    { 35, { M.SOUL, 2, 5 }, { M.LMYSTIC, 1, 2 }, M.SGLOW },
+    { 40, { M.VISION, 1, 2 }, { M.GMYSTIC, 1, 2 }, M.LGLOW },
+    { 45, { M.VISION, 2, 5 }, { M.LNETHER, 1, 2 }, M.SRADIANT },
+    { 50, { M.DREAM, 1, 2 }, { M.GNETHER, 1, 2 }, M.LRADIANT },
+    { 55, { M.DREAM, 2, 5 }, { M.LETERNAL, 1, 2 }, M.SBRILLIANT },
+    { 60, { M.ILLUSION, 1, 2 }, { M.GETERNAL, 1, 2 }, M.LBRILLIANT },
+    { 999, { M.ILLUSION, 2, 5 }, { M.GETERNAL, 2, 3 }, M.LBRILLIANT },
+}
+-- rare and epic: up to item level, list of { material, chance, min, max }
+local DE_RARE = {
+    { 25, { { M.SGLIMMER, 1, 1, 1 } } }, { 30, { { M.LGLIMMER, 1, 1, 1 } } },
+    { 35, { { M.SGLOW, 1, 1, 1 } } },    { 40, { { M.LGLOW, 1, 1, 1 } } },
+    { 45, { { M.SRADIANT, 1, 1, 1 } } }, { 50, { { M.LRADIANT, 1, 1, 1 } } },
+    { 55, { { M.SBRILLIANT, 1, 1, 1 } } },
+    { 999, { { M.LBRILLIANT, 0.995, 1, 1 }, { M.NEXUS, 0.005, 1, 1 } } },
+}
+local DE_EPIC = {
+    { 45, { { M.SRADIANT, 1, 2, 4 } } }, { 50, { { M.LRADIANT, 1, 2, 4 } } },
+    { 55, { { M.SBRILLIANT, 1, 2, 4 } } }, { 60, { { M.NEXUS, 1, 1, 1 } } },
+    { 999, { { M.NEXUS, 1, 1, 2 } } },
+}
+
+local function DisenchantOutcomes(id)
+    local _, _, quality, level, _, _, _, _, _, _, _, classID = ItemInfo(id)
+    if not (quality and level) or (classID ~= 2 and classID ~= 4) then return nil end
+    local function pick(t) for _, row in ipairs(t) do if level <= row[1] then return row end end end
+    if quality == 2 then
+        local row = pick(DE_UNCOMMON)
+        local weapon = classID == 2
+        local dustP, essP = weapon and 0.20 or 0.75, weapon and 0.75 or 0.20
+        if not row[4] then dustP, essP = weapon and 0.20 or 0.80, weapon and 0.80 or 0.20 end
+        local out = { { row[2][1], dustP, row[2][2], row[2][3] }, { row[3][1], essP, row[3][2], row[3][3] } }
+        if row[4] then out[3] = { row[4], 0.05, 1, 1 } end
+        return out
+    elseif quality == 3 and level >= 11 then
+        return pick(DE_RARE)[2]
+    elseif quality == 4 and level >= 40 then
+        return pick(DE_EPIC)[2]
+    end
+end
+
+-- average value of disenchanting one, and whether some material had no price
+local function DisenchantValue(id, p)
+    local outs = DisenchantOutcomes(id)
+    if not outs then return nil end
+    local v, partial, any = 0, false, false
+    for _, o in ipairs(outs) do
+        local price = p.items[o[1]]
+        if price then
+            v = v + o[2] * (o[3] + o[4]) / 2 * price
+            any = true
+        else
+            partial = true
+        end
+    end
+    if not any then return nil, true end
+    return math.floor(v + 0.5), partial
+end
+
+local function AddDisenchantLine(tt, id)
+    local p = DB.prices[priceKey]
+    if not (p and p.time) then return end
+    local ok, v, partial = pcall(DisenchantValue, id, p)
+    if not ok then return end
+    if v then
+        tt:AddDoubleLine("Disenchant |cff808080avg|r", Coin(v) .. (partial and "|cff808080 +?|r" or ""), 1, .82, 0, 1, 1, 1)
+    elseif partial then
+        tt:AddDoubleLine("Disenchant |cff808080avg|r", "|cff808080materials not on the AH|r", 1, .82, 0, 1, 1, 1)
+    end
+end
+
+---------------------------------------------------------------------------
 -- Tooltips
 ---------------------------------------------------------------------------
 local function AddItemLines(tt, id)
@@ -589,7 +678,13 @@ local function AddItemLines(tt, id)
     if rows > 1 then tt:AddDoubleLine("Total", total, .6, .6, .6, .6, .6, .6) end
 
     local bind = ItemInfo and select(14, ItemInfo(id))
-    if bind == 1 or bind == 4 then return end -- bind on pickup / quest items can't be sold
+    if bind == 1 or bind == 4 then -- bind on pickup / quest items can't be sold, but can be disenchanted
+        if DisenchantOutcomes(id) and DB.prices[priceKey] then
+            if not started then tt:AddLine(" ") end
+            AddDisenchantLine(tt, id)
+        end
+        return
+    end
     if not started then tt:AddLine(" ") end
     local p = DB.prices[priceKey]
     if p and p.time then
@@ -597,6 +692,7 @@ local function AddItemLines(tt, id)
         local label = "AH " .. (age > STALE and "|cffff3333" or "|cff808080") .. Ago(age) .. "|r"
         local v = p.items[id]
         tt:AddDoubleLine(label, v and Coin(v) or "|cff808080none listed|r", 1, .82, 0, 1, 1, 1)
+        AddDisenchantLine(tt, id)
     else
         tt:AddDoubleLine("AH", "|cff808080no scan yet|r", 1, .82, 0, 1, 1, 1)
     end
