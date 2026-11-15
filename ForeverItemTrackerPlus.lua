@@ -1295,16 +1295,14 @@ local function TagRow(row)
     row.fitpProfit:SetText(info and info.recipeID and ProfitText(info.recipeID) or "")
     local costW = row.fitpProfit:GetStringWidth() or 0
     row.fitpHover:SetWidth(math.max(1, costW))
-    -- long recipe names stop short of the cost (cut off with "...")
+    -- long recipe names stop short of the cost (cut off with "..."): the
+    -- name's right edge is pinned to the cost's left edge, which holds even
+    -- when the game resizes the name itself
     local label = row.Label
     if label and info then
         label:SetWordWrap(false)
         if label.SetMaxLines then label:SetMaxLines(1) end
-        local rowL, labelL, rowW = row:GetLeft(), label:GetLeft(), row:GetWidth()
-        if rowL and labelL and rowW and rowW > 0 then
-            local room = rowW - (labelL - rowL) - (costW > 0 and costW + 10 or 6)
-            if room > 20 then label:SetWidth(room) end
-        end
+        label:SetPoint("RIGHT", row.fitpHover, "LEFT", costW > 0 and -6 or 0, 0)
     end
 end
 
