@@ -519,6 +519,8 @@ local function Process()
     step()
 end
 
+local SCAN_TIMEOUT = 300
+
 local function TryScan(manual)
     if not ahOpen then return end
     if scanning then
@@ -550,10 +552,14 @@ local function TryScan(manual)
     waitTicker = C_Timer.NewTicker(0.25, function()
         ShowProgress(string.format("Scanning: waiting for server  %ds", Elapsed()))
     end)
-    C_Timer.After(90, function()
-        if awaiting then
+    -- A big auction house can take the server a few minutes to send. Asking
+    -- again restarts its work, so wait up to 5 minutes before giving up.
+    local token = scanStart
+    C_Timer.After(SCAN_TIMEOUT, function()
+        if awaiting and scanStart == token then
             awaiting, scanning = false, false
             StopWaiting()
+            Msg("the server didn't answer within %d minutes; will retry.", SCAN_TIMEOUT / 60)
             ShowProgress("Scan timed out; will retry", nil, 5)
         end
     end)
