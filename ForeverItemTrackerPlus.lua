@@ -480,7 +480,7 @@ local scanLog = {}
 local function Log(fmt, ...)
     local t = scanStart and string.format("+%.1fs", GetTime() - scanStart) or date("%H:%M:%S")
     scanLog[#scanLog + 1] = t .. "  " .. string.format(fmt, ...)
-    if #scanLog > 40 then table.remove(scanLog, 1) end
+    if #scanLog > 80 then table.remove(scanLog, 1) end
 end
 
 local function Process()
@@ -494,7 +494,7 @@ local function Process()
         ShowProgress("Scan came back empty; will retry", nil, 5)
         return
     end
-    local items, i = {}, 1
+    local items, i, missing = {}, 1, 0
     local function step()
         -- stop if the AH closed or a normal search replaced the results
         if not ahOpen or (getN() or 0) ~= n then
@@ -507,7 +507,8 @@ local function Process()
         ShowProgress(string.format("Scanning: reading auctions  %d%%", math.floor((i - 1) / n * 100)), (i - 1) / n)
         local last = math.min(i + 2499, n)
         for j = i, last do
-            local _, _, count, _, _, _, _, _, _, buyout, _, _, _, _, _, _, id = getInfo(j)
+            local _, _, count, _, _, _, _, _, _, buyout, _, _, _, _, _, _, id, hasAll = getInfo(j)
+            if hasAll == false then missing = missing + 1 end
             if id and buyout and buyout > 0 then
                 local each = math.floor(buyout / math.max(count or 1, 1))
                 if not items[id] or each < items[id] then items[id] = each end
@@ -523,7 +524,7 @@ local function Process()
             local k = 0
             for _ in pairs(items) do k = k + 1 end
             Msg("scanned %d auctions (%d items).", n, k)
-            Log("complete: %d auctions, %d items", n, k)
+            Log("complete: %d auctions, %d items; %d entries lacked item info (each one asks the server)", n, k, missing)
             ShowProgress(string.format("Scan complete: %s auctions in %ds", Comma(n), Elapsed()), 1, 5)
         end
     end
@@ -1442,6 +1443,17 @@ function H.AUCTION_HOUSE_CLOSED()
     if bar then bar:Hide() end
 end
 H.AUCTION_ITEM_LIST_UPDATE = function() OnScanData("AUCTION_ITEM_LIST_UPDATE") end
+-- the auction house's request queue: searches wait while it's busy
+H.AUCTION_HOUSE_THROTTLED_SYSTEM_READY = function() Log("auction house ready for requests again") end
+H.AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED = function() Log("auction house dropped a request (busy)") end
+H.AUCTION_HOUSE_THROTTLED_MESSAGE_QUEUED = function() Log("auction house queued a request (busy)") end
+H.AUCTION_HOUSE_THROTTLED_MESSAGE_SENT = function() Log("auction house sent a queued request") end
+H.AUCTION_HOUSE_BROWSE_RESULTS_UPDATED = function()
+    local r = C_AuctionHouse.GetBrowseResults and C_AuctionHouse.GetBrowseResults()
+    Log("search results arrived: %s", r and #r or "?")
+end
+H.AUCTION_HOUSE_BROWSE_FAILURE = function() Log("a search failed") end
+H.AUCTION_HOUSE_NEW_RESULTS_RECEIVED = function() Log("new search results received") end
 H.REPLICATE_ITEM_LIST_UPDATE = function() OnScanData("REPLICATE_ITEM_LIST_UPDATE") end
 
 local f = CreateFrame("Frame")
@@ -1466,6 +1478,10 @@ SlashCmdList.FITP = function(msg)
         for _, line in ipairs(scanLog) do Msg("  %s", line) end
         local p = DB.prices[priceKey]
         Msg("  last good scan: %s", p and p.time and (Ago(time() - p.time)) or "never")
+        if C_AuctionHouse and C_AuctionHouse.IsThrottledMessageSystemReady then
+            Msg("  auction house ready for searches right now: %s",
+                tostring(C_AuctionHouse.IsThrottledMessageSystemReady()))
+        end
     elseif cmd == "scan" then
         if ahOpen then TryScan(true) else Msg("open the auction house first.") end
     elseif cmd == "auto" then
