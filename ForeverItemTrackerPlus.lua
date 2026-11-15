@@ -4,7 +4,7 @@
 local ADDON = ...
 local PREFIX = "|cff33ff99Forever Item Tracker PLUS|r: "
 local STALE = 12 * 3600        -- scan age shown in red after this many seconds
-local MIN_RESCAN = 15 * 60     -- the server allows one full scan per 15 minutes
+local MIN_RESCAN = 60 * 60     -- automatic scans at most once an hour
 
 local DB, me, realm, priceKey
 local bankOpen, ahOpen, scanning, awaiting, ticker
@@ -479,7 +479,17 @@ local Comma = BreakUpLargeNumbers or tostring
 local scanLog = {}
 local function Log(fmt, ...)
     local t = scanStart and string.format("+%.1fs", GetTime() - scanStart) or date("%H:%M:%S")
-    scanLog[#scanLog + 1] = t .. "  " .. string.format(fmt, ...)
+    local text = string.format(fmt, ...)
+    -- the same message again: count it instead of adding a line
+    local prev = scanLog[#scanLog]
+    if prev and scanLog.lastText == text then
+        scanLog.repeats = (scanLog.repeats or 1) + 1
+        scanLog[#scanLog] = scanLog.lastLine .. string.format("  (x%d)", scanLog.repeats)
+        return
+    end
+    scanLog.lastText, scanLog.repeats = text, 1
+    scanLog.lastLine = t .. "  " .. text
+    scanLog[#scanLog + 1] = scanLog.lastLine
     if #scanLog > 80 then table.remove(scanLog, 1) end
 end
 
