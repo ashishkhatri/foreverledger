@@ -1170,8 +1170,18 @@ MODERN_API.reagentLink = function(recipeID, r)
     local id = slot and slot.reagents[1].itemID
     return id and ("item:" .. id) or nil
 end
+-- Recipes whose result isn't an item to sell (enchants): cost only, no profit
+local function MakesNothingToSell(recipeID, sch)
+    local enchantType = Enum and Enum.TradeskillRecipeType and Enum.TradeskillRecipeType.Enchant
+    if sch and enchantType and sch.recipeType == enchantType then return true end
+    local ok, info = pcall(C_TradeSkillUI.GetRecipeInfo, recipeID)
+    if ok and info and (info.isEnchantingRecipe or info.createsItem == false) then return true end
+    return false
+end
+
 MODERN_API.itemLink = function(recipeID)
     local sch = Schematic(recipeID)
+    if MakesNothingToSell(recipeID, sch) then return nil end
     return sch and sch.outputItemID and ("item:" .. sch.outputItemID) or nil
 end
 MODERN_API.numMade = function(recipeID)
@@ -1220,7 +1230,7 @@ local function RecipeProfit(recipeID)
     local p = DB.prices[priceKey]
     if not (p and p.time) then return nil end
     local sch = Schematic(recipeID)
-    if not (sch and sch.outputItemID) then return nil end
+    if not (sch and sch.outputItemID) or MakesNothingToSell(recipeID, sch) then return nil end
     local value = p.items[sch.outputItemID]
     if not value then return nil end
     local total, missing, crafted = 0, {}, {}
