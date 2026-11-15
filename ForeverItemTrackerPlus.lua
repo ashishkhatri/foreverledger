@@ -1283,7 +1283,43 @@ local function TagRow(row)
         row.fitpHover = hover
     end
     row.fitpProfit:SetText(info and info.recipeID and ProfitText(info.recipeID) or "")
-    row.fitpHover:SetWidth(math.max(1, row.fitpProfit:GetStringWidth()))
+    local costW = row.fitpProfit:GetStringWidth() or 0
+    row.fitpHover:SetWidth(math.max(1, costW))
+    -- Make room for the cost. Each row is: name, then "[21]" (how many you
+    -- can make), and the game sizes the name so those two fit. Whenever it
+    -- does, take the cost's width (plus a gap) off the name as well.
+    local label, count = row.Label, row.Count
+    row.fitpTrim = costW > 0 and (costW + 8) or 0
+    if label and not row.fitpHooked then
+        row.fitpHooked = true
+        hooksecurefunc(label, "SetWidth", function(self, w)
+            if row.fitpSizing or not w then return end
+            row.fitpSizing = true
+            self:SetWidth(math.max(20, w - (row.fitpTrim or 0)))
+            row.fitpSizing = false
+            row.fitpLastGameWidth = w
+        end)
+    end
+    if label and not row.fitpLastGameWidth then
+        local w = label:GetWidth()              -- sized by the game before we hooked in
+        if w and w > 0 then row.fitpLastGameWidth = w end
+    end
+    if label and row.fitpLastGameWidth then
+        row.fitpSizing = true
+        label:SetWidth(math.max(20, row.fitpLastGameWidth - row.fitpTrim))
+        row.fitpSizing = false
+    end
+    -- if the count is pinned to the row's right edge (not after the name),
+    -- put the cost just left of it instead of on top of it
+    if count and count.GetPoint then
+        local _, rel = count:GetPoint(1)
+        row.fitpHover:ClearAllPoints()
+        if rel and rel ~= label then
+            row.fitpHover:SetPoint("RIGHT", count, "LEFT", -4, 0)
+        else
+            row.fitpHover:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+        end
+    end
 end
 
 local function TagList(scrollBox)
