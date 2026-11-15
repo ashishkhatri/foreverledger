@@ -1258,6 +1258,30 @@ local function ProfitText(recipeID)
     return text or nil
 end
 
+-- shorten a row's name only if name + count + cost would overlap
+local function FitLabel(row)
+    local label, count = row.Label, row.Count
+    if not (label and row.fitpGameWidth) then return end
+    local rl, ll, rw = row:GetLeft(), label:GetLeft(), row:GetWidth()
+    if not (rl and ll and rw and rw > 0) then
+        if not row.fitpRetry then                 -- not laid out yet: try again next frame
+            row.fitpRetry = true
+            C_Timer.After(0, function() row.fitpRetry = false; FitLabel(row) end)
+        end
+        return
+    end
+    local countW = 0
+    if count and count:IsShown() and (count:GetText() or "") ~= "" then
+        countW = (count:GetStringWidth() or 0) + 4
+    end
+    local costW = row.fitpCostW or 0
+    local room = rw - (ll - rl) - countW - (costW > 0 and costW + 12 or 6)
+    local target = math.max(20, math.min(row.fitpGameWidth, room))
+    row.fitpSizing = true
+    label:SetWidth(target)
+    row.fitpSizing = false
+end
+
 -- put each recipe's crafting cost at the right edge of its row in the recipe list
 local function TagRow(row)
     local data = row.GetElementData and row:GetElementData()
@@ -1286,29 +1310,20 @@ local function TagRow(row)
     local costW = row.fitpProfit:GetStringWidth() or 0
     row.fitpHover:SetWidth(math.max(1, costW))
     -- Make room for the cost. Each row is: name, then "[21]" (how many you
-    -- can make), and the game sizes the name so those two fit. Whenever it
-    -- does, take the cost's width (plus a gap) off the name as well.
+    -- can make). Only when name + count + cost don't all fit is the name
+    -- shortened, and only by as much as needed.
     local label, count = row.Label, row.Count
-    row.fitpTrim = costW > 0 and (costW + 8) or 0
+    row.fitpCostW = costW
     if label and not row.fitpHooked then
         row.fitpHooked = true
-        hooksecurefunc(label, "SetWidth", function(self, w)
+        row.fitpGameWidth = label:GetWidth()          -- what the game chose before we hooked in
+        hooksecurefunc(label, "SetWidth", function(_, w)
             if row.fitpSizing or not w then return end
-            row.fitpSizing = true
-            self:SetWidth(math.max(20, w - (row.fitpTrim or 0)))
-            row.fitpSizing = false
-            row.fitpLastGameWidth = w
+            row.fitpGameWidth = w
+            FitLabel(row)
         end)
     end
-    if label and not row.fitpLastGameWidth then
-        local w = label:GetWidth()              -- sized by the game before we hooked in
-        if w and w > 0 then row.fitpLastGameWidth = w end
-    end
-    if label and row.fitpLastGameWidth then
-        row.fitpSizing = true
-        label:SetWidth(math.max(20, row.fitpLastGameWidth - row.fitpTrim))
-        row.fitpSizing = false
-    end
+    FitLabel(row)
     -- if the count is pinned to the row's right edge (not after the name),
     -- put the cost just left of it instead of on top of it
     if count and count.GetPoint then
