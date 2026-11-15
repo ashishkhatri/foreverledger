@@ -531,6 +531,7 @@ local function Process()
 end
 
 local SCAN_TIMEOUT = 300
+local OnScanDataRef                         -- set once OnScanData is defined below
 
 local function TryScan(manual)
     if not ahOpen then return end
@@ -567,8 +568,29 @@ local function TryScan(manual)
     Msg("scanning the auction house...")
     ShowProgress("Scanning: waiting for server  0s")
     StopWaiting()
+    -- Don't rely only on the server's "results ready" event: watch the count
+    -- of auctions received, and once it's stopped growing for 4 seconds,
+    -- read them anyway.
+    local getN = Accessors()
+    local lastN, steady, sinceCheck = getN() or 0, 0, 0
+    local startN = lastN
     waitTicker = C_Timer.NewTicker(0.25, function()
-        ShowProgress(string.format("Scanning: waiting for server  %ds", Elapsed()))
+        local n = getN() or 0
+        ShowProgress(n > startN and string.format("Scanning: receiving  %s auctions  %ds", Comma(n), Elapsed())
+            or string.format("Scanning: waiting for server  %ds", Elapsed()))
+        sinceCheck = sinceCheck + 0.25
+        if sinceCheck < 1 then return end
+        sinceCheck = 0
+        if n ~= lastN then
+            Log("receiving: %d auctions so far", n)
+            lastN, steady = n, 0
+        elseif n > startN then
+            steady = steady + 1
+            if steady >= 4 and awaiting then
+                Log("count steady at %d for 4s with no results event: reading them", n)
+                OnScanDataRef("count steady")
+            end
+        end
     end)
     -- A big auction house can take the server a few minutes to send. Asking
     -- again restarts its work, so wait up to 5 minutes before giving up.
@@ -591,6 +613,7 @@ local function OnScanData(event)
     awaiting = false
     C_Timer.After(1, Process)
 end
+OnScanDataRef = OnScanData
 
 ---------------------------------------------------------------------------
 -- Disenchanting: what an armor or weapon piece is worth on average when
