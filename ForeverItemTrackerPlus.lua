@@ -1094,8 +1094,7 @@ local function ShowCost(line, index, api)
     local ago = (age > STALE and "|cffff3333" or GRAY) .. Ago(age) .. "|r"
     rows[#rows + 1] = { " ", " " }
     rows[#rows + 1] = { GRAY .. "Prices from the AH scan|r", ago }
-    headline = headline or ("|cffffd100Crafting cost|r  " .. Coin(total) .. (anyMissing and (GRAY .. " +?|r") or "")
-        .. GRAY .. "  (no AH price for the result)|r")
+    headline = headline or ("|cffffd100Crafting cost|r  " .. Coin(total) .. (anyMissing and (GRAY .. " +?|r") or ""))
     set(headline .. "   " .. GRAY .. "scan|r " .. ago, rows)
 end
 
