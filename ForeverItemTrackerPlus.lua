@@ -1283,7 +1283,19 @@ local function TagRow(row)
         row.fitpHover = hover
     end
     row.fitpProfit:SetText(info and info.recipeID and ProfitText(info.recipeID) or "")
-    row.fitpHover:SetWidth(math.max(1, row.fitpProfit:GetStringWidth()))
+    local costW = row.fitpProfit:GetStringWidth() or 0
+    row.fitpHover:SetWidth(math.max(1, costW))
+    -- long recipe names stop short of the cost (cut off with "...")
+    local label = row.Label
+    if label and info then
+        label:SetWordWrap(false)
+        if label.SetMaxLines then label:SetMaxLines(1) end
+        local rowL, labelL, rowW = row:GetLeft(), label:GetLeft(), row:GetWidth()
+        if rowL and labelL and rowW and rowW > 0 then
+            local room = rowW - (labelL - rowL) - (costW > 0 and costW + 10 or 6)
+            if room > 20 then label:SetWidth(room) end
+        end
+    end
 end
 
 local function TagList(scrollBox)
