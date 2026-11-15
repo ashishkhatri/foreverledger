@@ -1428,17 +1428,33 @@ H.BAG_CONTAINER_UPDATE = QueueBags
 function H.PLAYER_MONEY() Me().gold = GetMoney() end
 H.MAIL_INBOX_UPDATE = ScanMail
 
+local readyTicker
 function H.AUCTION_HOUSE_SHOW()
     ahOpen = true
     Log("auction house opened")
     C_Timer.After(1, function() TryScan() end)
     if ticker then ticker:Cancel() end
     ticker = C_Timer.NewTicker(30, function() TryScan() end)
+    -- note in the scan log whenever the auction house goes busy / ready
+    if readyTicker then readyTicker:Cancel() end
+    local ready = C_AuctionHouse and C_AuctionHouse.IsThrottledMessageSystemReady
+    if ready then
+        local last = ready()
+        Log("auction house ready for searches: %s", tostring(last))
+        readyTicker = C_Timer.NewTicker(1, function()
+            local now = ready()
+            if now ~= last then
+                Log("auction house is now %s", now and "ready for searches" or "busy")
+                last = now
+            end
+        end)
+    end
 end
 function H.AUCTION_HOUSE_CLOSED()
     if scanning then Log("auction house closed mid-scan (waiting=%s)", tostring(awaiting)) end
     ahOpen, awaiting, scanning = false, false, false
     if ticker then ticker:Cancel(); ticker = nil end
+    if readyTicker then readyTicker:Cancel(); readyTicker = nil end
     StopWaiting()
     if bar then bar:Hide() end
 end
