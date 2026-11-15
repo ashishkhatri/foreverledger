@@ -475,10 +475,19 @@ local function Elapsed() return math.floor(GetTime() - (scanStart or GetTime()) 
 
 local Comma = BreakUpLargeNumbers or tostring
 
+-- Scan log: every step of the last scans, for /fitp scanlog
+local scanLog = {}
+local function Log(fmt, ...)
+    local t = scanStart and string.format("+%.1fs", GetTime() - scanStart) or date("%H:%M:%S")
+    scanLog[#scanLog + 1] = t .. "  " .. string.format(fmt, ...)
+    if #scanLog > 40 then table.remove(scanLog, 1) end
+end
+
 local function Process()
     StopWaiting()
     local getN, getInfo = Accessors()
     local n = getN() or 0
+    Log("reading results: %d auctions", n)
     if n == 0 then
         scanning = false
         Msg("the scan came back empty; it will retry later.")
@@ -489,6 +498,7 @@ local function Process()
     local function step()
         -- stop if the AH closed or a normal search replaced the results
         if not ahOpen or (getN() or 0) ~= n then
+            Log("interrupted at %d/%d: AH open=%s, count now %s", i, n, tostring(ahOpen), tostring(getN()))
             scanning = false
             Msg("scan interrupted; it will retry later.")
             ShowProgress("Scan interrupted; will retry", nil, 5)
@@ -513,6 +523,7 @@ local function Process()
             local k = 0
             for _ in pairs(items) do k = k + 1 end
             Msg("scanned %d auctions (%d items).", n, k)
+            Log("complete: %d auctions, %d items", n, k)
             ShowProgress(string.format("Scan complete: %s auctions in %ds", Comma(n), Elapsed()), 1, 5)
         end
     end
@@ -527,6 +538,7 @@ local function TryScan(manual)
         if manual then Msg("already scanning.") end
         return
     end
+    local function why(text) if manual then Log("not started: %s", text) end end
     if not manual then
         local p = Prices()
         if not DB.auto or (p.time and time() - p.time < MIN_RESCAN) then return end
@@ -535,18 +547,24 @@ local function TryScan(manual)
         local _, canAll = CanSendAuctionQuery()
         if not canAll then
             if manual then Msg("the server allows one full scan every 15 minutes; try again shortly.") end
+            why("server says no full scan allowed yet")
             return
         end
         scanning, awaiting = true, true
+        scanStart = GetTime()
+        Log("asked the server (old API, QueryAuctionItems getAll)%s", manual and ", manual" or "")
         QueryAuctionItems("", nil, nil, 0, false, nil, true, false, nil)
     elseif C_AuctionHouse and C_AuctionHouse.ReplicateItems then
         scanning, awaiting = true, true
+        scanStart = GetTime()
+        Log("asked the server (C_AuctionHouse.ReplicateItems)%s; items already there: %s",
+            manual and ", manual" or "", tostring(C_AuctionHouse.GetNumReplicateItems()))
         C_AuctionHouse.ReplicateItems()
     else
+        why("no scan API found")
         return
     end
     Msg("scanning the auction house...")
-    scanStart = GetTime()
     ShowProgress("Scanning: waiting for server  0s")
     StopWaiting()
     waitTicker = C_Timer.NewTicker(0.25, function()
@@ -560,12 +578,15 @@ local function TryScan(manual)
             awaiting, scanning = false, false
             StopWaiting()
             Msg("the server didn't answer within %d minutes; will retry.", SCAN_TIMEOUT / 60)
+            Log("timed out after %ds with no results event", SCAN_TIMEOUT)
             ShowProgress("Scan timed out; will retry", nil, 5)
         end
     end)
 end
 
-local function OnScanData()
+local function OnScanData(event)
+    local getN = Accessors()
+    Log("%s: waiting=%s, %s auctions", event or "results event", tostring(awaiting), tostring(getN and getN()))
     if not awaiting then return end
     awaiting = false
     C_Timer.After(1, Process)
@@ -1335,18 +1356,20 @@ H.MAIL_INBOX_UPDATE = ScanMail
 
 function H.AUCTION_HOUSE_SHOW()
     ahOpen = true
+    Log("auction house opened")
     C_Timer.After(1, function() TryScan() end)
     if ticker then ticker:Cancel() end
     ticker = C_Timer.NewTicker(30, function() TryScan() end)
 end
 function H.AUCTION_HOUSE_CLOSED()
+    if scanning then Log("auction house closed mid-scan (waiting=%s)", tostring(awaiting)) end
     ahOpen, awaiting, scanning = false, false, false
     if ticker then ticker:Cancel(); ticker = nil end
     StopWaiting()
     if bar then bar:Hide() end
 end
-H.AUCTION_ITEM_LIST_UPDATE = OnScanData
-H.REPLICATE_ITEM_LIST_UPDATE = OnScanData
+H.AUCTION_ITEM_LIST_UPDATE = function() OnScanData("AUCTION_ITEM_LIST_UPDATE") end
+H.REPLICATE_ITEM_LIST_UPDATE = function() OnScanData("REPLICATE_ITEM_LIST_UPDATE") end
 
 local f = CreateFrame("Frame")
 H.frame = f
@@ -1365,7 +1388,12 @@ SLASH_FITP2 = "/itemtracker"
 SlashCmdList.FITP = function(msg)
     local cmd, arg = (msg or ""):match("^(%S*)%s*(.-)$")
     cmd = cmd:lower()
-    if cmd == "scan" then
+    if cmd == "scanlog" then
+        Msg("scan log (%d lines):", #scanLog)
+        for _, line in ipairs(scanLog) do Msg("  %s", line) end
+        local p = DB.prices[priceKey]
+        Msg("  last good scan: %s", p and p.time and (Ago(time() - p.time)) or "never")
+    elseif cmd == "scan" then
         if ahOpen then TryScan(true) else Msg("open the auction house first.") end
     elseif cmd == "auto" then
         DB.auto = not DB.auto
