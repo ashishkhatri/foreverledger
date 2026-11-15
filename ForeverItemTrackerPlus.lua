@@ -553,11 +553,15 @@ local function TryScan(manual)
     end
     local function why(text) if manual then Log("not started: %s", text) end end
     local p = Prices()
+    -- the server quietly ignores a full scan asked for within 15 minutes of
+    -- the last request (finished or not), and the auction house can then stay
+    -- stuck until relog, so never ask sooner. p.asked survives reloads.
+    local sinceAsk = p.asked and time() - p.asked
     if not manual then
         if not DB.auto or (p.time and time() - p.time < MIN_RESCAN) then return end
-    elseif p.time and time() - p.time < SERVER_COOLDOWN then
-        -- the server quietly ignores a full scan asked for too soon after the last
-        local wait = math.ceil((SERVER_COOLDOWN - (time() - p.time)) / 60)
+        if sinceAsk and sinceAsk < SERVER_COOLDOWN then return end
+    elseif sinceAsk and sinceAsk < SERVER_COOLDOWN then
+        local wait = math.ceil((SERVER_COOLDOWN - sinceAsk) / 60)
         Msg("the server allows one full scan every 15 minutes; try again in %d min.", wait)
         why("within the server's 15 minute cooldown")
         return
@@ -572,12 +576,14 @@ local function TryScan(manual)
         scanning, awaiting = true, true
         scanStart = GetTime()
         Log("asked the server (old API, QueryAuctionItems getAll)%s", manual and ", manual" or "")
+        p.asked = time()
         QueryAuctionItems("", nil, nil, 0, false, nil, true, false, nil)
     elseif C_AuctionHouse and C_AuctionHouse.ReplicateItems then
         scanning, awaiting = true, true
         scanStart = GetTime()
         Log("asked the server (C_AuctionHouse.ReplicateItems)%s; items already there: %s",
             manual and ", manual" or "", tostring(C_AuctionHouse.GetNumReplicateItems()))
+        p.asked = time()
         C_AuctionHouse.ReplicateItems()
     else
         why("no scan API found")
