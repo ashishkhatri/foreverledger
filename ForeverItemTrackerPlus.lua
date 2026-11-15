@@ -478,7 +478,7 @@ local Comma = BreakUpLargeNumbers or tostring
 -- Scan log: every step of the last scans, for /fitp scanlog
 local scanLog = {}
 local function Log(fmt, ...)
-    local t = scanStart and string.format("+%.1fs", GetTime() - scanStart) or date("%H:%M:%S")
+    local t = date("%H:%M:%S") .. (scanStart and string.format(" +%.0fs", GetTime() - scanStart) or "")
     local text = string.format(fmt, ...)
     -- the same message again: count it instead of adding a line
     local prev = scanLog[#scanLog]
@@ -1400,6 +1400,18 @@ function H.ADDON_LOADED(name)
     if name ~= ADDON then return end
     ForeverItemTrackerPlusDB = ForeverItemTrackerPlusDB or {}
     DB = ForeverItemTrackerPlusDB
+    -- keep the scan log across reloads: earlier lines first, then a marker
+    if type(DB.scanLog) == "table" then
+        local now = {}
+        for i, line in ipairs(scanLog) do now[i] = line end
+        for i = #scanLog, 1, -1 do scanLog[i] = nil end
+        for _, line in ipairs(DB.scanLog) do scanLog[#scanLog + 1] = line end
+        scanLog[#scanLog + 1] = date("%H:%M:%S") .. "  ---- reload ----"
+        for _, line in ipairs(now) do scanLog[#scanLog + 1] = line end
+        while #scanLog > 80 do table.remove(scanLog, 1) end
+    end
+    scanLog.lastText = nil
+    DB.scanLog = scanLog
     DB.chars = DB.chars or {}
     DB.prices = DB.prices or {}
     if DB.auto == nil then DB.auto = true end
