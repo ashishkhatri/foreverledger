@@ -5,6 +5,7 @@ local ADDON = ...
 local PREFIX = "|cff33ff99Forever Item Tracker PLUS|r: "
 local STALE = 12 * 3600        -- scan age shown in red after this many seconds
 local MIN_RESCAN = 60 * 60     -- automatic scans at most once an hour
+local SERVER_COOLDOWN = 15 * 60 -- the server ignores full scans closer together than this
 
 local DB, me, realm, priceKey
 local bankOpen, ahOpen, scanning, awaiting, ticker
@@ -551,9 +552,15 @@ local function TryScan(manual)
         return
     end
     local function why(text) if manual then Log("not started: %s", text) end end
+    local p = Prices()
     if not manual then
-        local p = Prices()
         if not DB.auto or (p.time and time() - p.time < MIN_RESCAN) then return end
+    elseif p.time and time() - p.time < SERVER_COOLDOWN then
+        -- the server quietly ignores a full scan asked for too soon after the last
+        local wait = math.ceil((SERVER_COOLDOWN - (time() - p.time)) / 60)
+        Msg("the server allows one full scan every 15 minutes; try again in %d min.", wait)
+        why("within the server's 15 minute cooldown")
+        return
     end
     if QueryAuctionItems then
         local _, canAll = CanSendAuctionQuery()
