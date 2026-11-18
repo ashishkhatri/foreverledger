@@ -740,10 +740,26 @@ end
 -- the game's "Sell Price" line, moved down here just above the AH price
 -- (only once the game's own line has been taken over, so it's never shown twice)
 local sellMoved = false
+-- vendor price for ONE of the item (the game's own line is for the whole stack)
+local function VendorEach(tt, id)
+    local each = ItemInfo and select(11, ItemInfo(id))
+    if each then return each end
+    -- item info not loaded yet: the game's stack price, divided by the stack
+    local price = tt.fitpSellPrice
+    if not price or price == 0 then return price end
+    local owner = tt.GetOwner and tt:GetOwner()
+    local ok, bag, slot = pcall(function() return owner:GetBagID(), owner:GetID() end)
+    if ok and bag and slot and C_Container and C_Container.GetContainerItemInfo then
+        local info = C_Container.GetContainerItemInfo(bag, slot)
+        if info and info.stackCount and info.stackCount > 1 then
+            return math.floor(price / info.stackCount + 0.5)
+        end
+    end
+    return price
+end
 local function AddVendorLine(tt, id)
     if not sellMoved then return end
-    local price = tt.fitpSellPrice
-    if price == nil then price = ItemInfo and select(11, ItemInfo(id)) end
+    local price = VendorEach(tt, id)
     if price and price > 0 then
         tt:AddDoubleLine("Vendor", Coin(price), 1, .82, 0, 1, 1, 1)
     end
@@ -794,7 +810,7 @@ local function AddItemLines(tt, id)
 
     local bind = ItemInfo and select(14, ItemInfo(id))
     if bind == 1 or bind == 4 then -- bind on pickup / quest items can't be sold, but can be disenchanted
-        local vendor = sellMoved and (tt.fitpSellPrice or (ItemInfo and select(11, ItemInfo(id))))
+        local vendor = sellMoved and VendorEach(tt, id)
         local de = DisenchantOutcomes(id) and DB.prices[priceKey]
         if (vendor and vendor > 0) or de then
             tt:AddLine(" ")                        -- a gap before the prices
@@ -917,8 +933,8 @@ local function HookTooltips()
         and Enum and Enum.TooltipDataType and Enum.TooltipDataType.Item
     if useProcessor then
         TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, OnItemTooltip)
-        -- the game's "Sell Price" line: keep its amount (it's for the whole
-        -- stack), skip drawing it there; it's shown above the AH price instead
+        -- the game's "Sell Price" line (for the whole stack): skip drawing it
+        -- there; the price for one is shown above the AH price instead
         local sellType = Enum.TooltipDataLineType and Enum.TooltipDataLineType.SellPrice
         if sellType and TooltipDataProcessor.AddLinePreCall then
             TooltipDataProcessor.AddLinePreCall(sellType, function(tt, lineData)
