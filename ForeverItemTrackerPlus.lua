@@ -947,6 +947,26 @@ local function WritWants(writName)
     if want and OLD_WRITS[want] then return want, OLD_WRITS[want] end
 end
 
+-- Names for the items in your saved prices, so a writ (which only names its
+-- item) can find the price. Item names load from the server in the
+-- background, so this runs twice: once at login and again a minute later.
+local function LearnPricedNames()
+    local p = DB.prices[priceKey]
+    if not (p and p.items and C_Item and C_Item.GetItemNameByID) then return end
+    local ids = {}
+    for id in pairs(p.items) do ids[#ids + 1] = id end
+    local i = 1
+    local function step()
+        for j = i, math.min(i + 199, #ids) do
+            local n = C_Item.GetItemNameByID(ids[j])
+            if n then DB.itemNames[n] = ids[j] end
+        end
+        i = i + 200
+        if i <= #ids then C_Timer.After(0, step) end
+    end
+    step()
+end
+
 -- the item ID for a name: from the game if it knows it, else from a scan or your recipes
 local function IDForName(name)
     local lookup = GetItemInfo or (C_Item and C_Item.GetItemInfo)
@@ -972,7 +992,8 @@ AddWritLine = function(tt, id)
     local mult = n
     local each = fid and p.items[fid]
     tt:AddDoubleLine("   Buy on AH " .. ageText,
-        each and Coin(math.floor(each * mult + 0.5)) or "|cff808080not on the AH|r", 1, 1, 1, 1, 1, 1)
+        each and Coin(math.floor(each * mult + 0.5))
+            or (fid and "|cff808080not on the AH|r" or "|cff808080item not identified yet|r"), 1, 1, 1, 1, 1, 1)
     if fid and Me().crafts and Me().crafts[fid] then
         local ok, c = pcall(ItemCost, fid, p, {}, {}, 0, {})
         tt:AddDoubleLine("   Make yourself",
@@ -1577,6 +1598,8 @@ function H.PLAYER_LOGIN()
     ScanEquip()
 
     HookTooltips()
+    C_Timer.After(5, LearnPricedNames)
+    C_Timer.After(65, LearnPricedNames)
     if HandleModifiedItemClick then hooksecurefunc("HandleModifiedItemClick", OnModifiedItemClick) end
     HookAllMoney()
     HookProfessions()                 -- (if the professions windows are already loaded)
