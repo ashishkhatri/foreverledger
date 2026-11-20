@@ -518,8 +518,9 @@ local function Process()
         ShowProgress(string.format("Scanning: reading auctions  %d%%", math.floor((i - 1) / n * 100)), (i - 1) / n)
         local last = math.min(i + 2499, n)
         for j = i, last do
-            local _, _, count, _, _, _, _, _, _, buyout, _, _, _, _, _, _, id, hasAll = getInfo(j)
+            local iname, _, count, _, _, _, _, _, _, buyout, _, _, _, _, _, _, id, hasAll = getInfo(j)
             if hasAll == false then missing = missing + 1 end
+            if iname and id and iname ~= "" then DB.itemNames[iname] = id end
             if id and buyout and buyout > 0 then
                 local each = math.floor(buyout / math.max(count or 1, 1))
                 if not items[id] or each < items[id] then items[id] = each end
@@ -920,57 +921,83 @@ AddCrateLine = function(tt, id)
 end
 
 ---------------------------------------------------------------------------
--- Craftsman's Writs (Light's Hope): "Craftsman's Writ - Dense Weightstone"
--- asks for 120 Dense Weightstone. The tooltip shows what that costs at the
--- last AH scan, and what it costs to make yourself if you know the recipe.
--- Matched by the writ's name; item IDs are checked by name like the crates.
+-- Craftsman's Writs. WoW Forever's writs ("Craftsman's Writ: Heavy Leather
+-- Ball") are world drops, each asking for a number of one item. The number
+-- isn't on the writ, so it's learned from the quest the first time you have
+-- it in your quest log or hand it in, and remembered for every character.
+-- The tooltip shows that many at the last AH scan's prices, and what it
+-- costs to make yourself if you know the recipe.
+-- The original Light's Hope writs ("Craftsman's Writ - Dense Weightstone")
+-- have known amounts.
 ---------------------------------------------------------------------------
-local WRITS = {
-    ["Potion of Petrification"]          = { 1,   13506 },
-    ["Greater Arcane Protection Potion"] = { 15,  13461 },
-    ["Major Healing Potion"]             = { 20,  13446 },
-    ["Major Mana Potion"]                = { 10,  13444 },
-    ["Dense Weightstone"]                = { 120, 12643 },
-    ["Huge Thorium Battleaxe"]           = { 3,   12775 },
-    ["Imperial Plate Chest"]             = { 3,   12618 },
-    ["Volcanic Hammer"]                  = { 3,   12792 },
-    ["Radiant Circlet"]                  = { 3,   12417 },
-    ["Thorium Grenade"]                  = { 20,  15993 },
-    ["Thorium Tube"]                     = { 14,  16000 },
-    ["Gnomish Battle Chicken"]           = { 4,   10725 },
-    ["Goblin Sapper Charge"]             = { 20,  10646 },
-    ["Lightning Eel"]                    = { 30,  13757 },
-    ["Plated Armorfish"]                 = { 30,  13890 },
-    ["Stonescale Eel"]                   = { 40,  13422 },
-    ["Rugged Armor Kit"]                 = { 25,  15564 },
-    ["Runic Leather Pants"]              = { 4,   15096 },
-    ["Wicked Leather Belt"]              = { 10,  15088 },
-    ["Wicked Leather Headband"]          = { 10,  15086 },
-    ["Brightcloth Pants"]                = { 6,   14104 },
-    ["Runecloth Bag"]                    = { 8,   14046 },
-    ["Runecloth Boots"]                  = { 8,   13864 },
-    ["Runecloth Robe"]                   = { 8,   13858 },
+local OLD_WRITS = {
+    ["Potion of Petrification"] = 1, ["Greater Arcane Protection Potion"] = 15,
+    ["Major Healing Potion"] = 20, ["Major Mana Potion"] = 10, ["Dense Weightstone"] = 120,
+    ["Huge Thorium Battleaxe"] = 3, ["Imperial Plate Chest"] = 3, ["Volcanic Hammer"] = 3,
+    ["Radiant Circlet"] = 3, ["Thorium Grenade"] = 20, ["Thorium Tube"] = 14,
+    ["Gnomish Battle Chicken"] = 4, ["Goblin Sapper Charge"] = 20, ["Lightning Eel"] = 30,
+    ["Plated Armorfish"] = 30, ["Stonescale Eel"] = 40, ["Rugged Armor Kit"] = 25,
+    ["Runic Leather Pants"] = 4, ["Wicked Leather Belt"] = 10, ["Wicked Leather Headband"] = 10,
+    ["Brightcloth Pants"] = 6, ["Runecloth Bag"] = 8, ["Runecloth Boots"] = 8, ["Runecloth Robe"] = 8,
 }
+
+local function WritWants(writName)
+    if not writName then return end
+    return writName:match("^Craftsman's Writ: (.+)$") or writName:match("^Craftsman's Writ %- (.+)$")
+end
+
+-- the item ID for a name: from the game if it knows it, else from a scan or your recipes
+local function IDForName(name)
+    local lookup = GetItemInfo or (C_Item and C_Item.GetItemInfo)
+    if lookup then
+        local ok, _, link = pcall(lookup, name)
+        local id = ok and LinkID(link)
+        if id then DB.itemNames[name] = id; return id end
+    end
+    return DB.itemNames[name]
+end
+
+-- learn how many a writ asks for from your quest log
+local function LearnWritsFromLog()
+    if not (C_QuestLog and C_QuestLog.GetNumQuestLogEntries) then return end
+    for i = 1, C_QuestLog.GetNumQuestLogEntries() do
+        local info = C_QuestLog.GetInfo(i)
+        local want = info and not info.isHeader and WritWants(info.title)
+        if want then
+            local objs = C_QuestLog.GetQuestObjectives(info.questID)
+            for _, o in ipairs(objs or {}) do
+                if o.type == "item" and o.numRequired and o.numRequired > 0 then
+                    DB.writs[want] = o.numRequired
+                    break
+                end
+            end
+        end
+    end
+end
 
 AddWritLine = function(tt, id)
     local name = C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(id)
     if not name then name = tt.GetItem and tt:GetItem() end
-    local want = name and name:match("^Craftsman's Writ %- (.+)$")
-    local w = want and WRITS[want]
-    if not w then return end
+    local want = WritWants(name)
+    if not want then return end
+    local n = DB.writs[want] or OLD_WRITS[want]
     local p = DB.prices[priceKey]
+    tt:AddDoubleLine("Writ: " .. (n and (n .. " x ") or "") .. want, " ", 1, .82, 0, 1, 1, 1)
+    if not n then
+        tt:AddLine("   |cff808080Amount not known yet: accept a writ for this once to learn it.|r", 1, 1, 1, true)
+    end
     if not (p and p.time) then return end
-    local n, fid = w[1], FillID({ w[1], w[2], want })
+    local fid = IDForName(want)
     local age = time() - p.time
     local ageText = (age > STALE and "|cffff3333" or "|cff808080") .. Ago(age) .. "|r"
-    tt:AddDoubleLine("Writ: " .. n .. " x " .. want, " ", 1, .82, 0, 1, 1, 1)
-    local each = p.items[fid]
-    tt:AddDoubleLine("   Buy on AH " .. ageText,
-        each and Coin(math.floor(each * n + 0.5)) or "|cff808080not on the AH|r", 1, 1, 1, 1, 1, 1)
-    if Me().crafts and Me().crafts[fid] then
+    local mult = n or 1
+    local each = fid and p.items[fid]
+    tt:AddDoubleLine("   Buy on AH " .. ageText .. (n and "" or " |cff808080(each)|r"),
+        each and Coin(math.floor(each * mult + 0.5)) or "|cff808080not on the AH|r", 1, 1, 1, 1, 1, 1)
+    if fid and Me().crafts and Me().crafts[fid] then
         local ok, c = pcall(ItemCost, fid, p, {}, {}, 0, {})
-        tt:AddDoubleLine("   Make yourself",
-            ok and c and Coin(math.floor(c * n + 0.5)) or "|cff808080reagents not on the AH|r", 1, 1, 1, 1, 1, 1)
+        tt:AddDoubleLine("   Make yourself" .. (n and "" or " |cff808080(each)|r"),
+            ok and c and Coin(math.floor(c * mult + 0.5)) or "|cff808080reagents not on the AH|r", 1, 1, 1, 1, 1, 1)
     end
 end
 
@@ -1286,7 +1313,11 @@ local function LearnCrafts()
         local okI, info = pcall(C_TradeSkillUI.GetRecipeInfo, rid)
         if okI and info and info.learned then
             local sch = Schematic(rid)
-            if sch and sch.outputItemID then crafts[sch.outputItemID] = rid end
+            if sch and sch.outputItemID then
+                crafts[sch.outputItemID] = rid
+                local n = C_Item.GetItemNameByID and C_Item.GetItemNameByID(sch.outputItemID)
+                if n then DB.itemNames[n] = sch.outputItemID end
+            end
         end
     end
 end
@@ -1500,6 +1531,8 @@ function H.ADDON_LOADED(name)
     DB.scanLog = scanLog
     DB.chars = DB.chars or {}
     DB.prices = DB.prices or {}
+    DB.itemNames = DB.itemNames or {}   -- item name -> ID, from scans and recipes
+    DB.writs = DB.writs or {}           -- writ item name -> how many it asks for
     if DB.auto == nil then DB.auto = true end
 end
 
@@ -1585,6 +1618,17 @@ function H.MERCHANT_CLOSED() merchantOpen = false end
 function H.PLAYER_EQUIPMENT_CHANGED() ScanEquip(); QueueBags() end
 H.BAG_CONTAINER_UPDATE = QueueBags
 function H.PLAYER_MONEY() Me().gold = GetMoney() end
+function H.QUEST_ACCEPTED() C_Timer.After(1, LearnWritsFromLog) end
+function H.QUEST_LOG_UPDATE() LearnWritsFromLog() end
+-- handing a writ in: the required items are listed
+function H.QUEST_PROGRESS()
+    local want = WritWants(GetTitleText and GetTitleText())
+    if not want or not GetNumQuestItems then return end
+    for i = 1, GetNumQuestItems() do
+        local iname, _, count = GetQuestItemInfo("required", i)
+        if count and count > 0 then DB.writs[want] = count; break end
+    end
+end
 H.MAIL_INBOX_UPDATE = ScanMail
 
 local readyTicker
