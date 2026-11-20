@@ -718,6 +718,7 @@ end
 
 local ItemCost                              -- crafting cost of an item (defined with the professions code)
 local AddCrateLine                          -- Waylaid Crates (defined below)
+local AddWritLine                           -- Craftsman's Writs (defined below)
 
 local function AddDisenchantLine(tt, id)
     local p = DB.prices[priceKey]
@@ -829,6 +830,7 @@ local function AddItemLines(tt, id)
         tt:AddDoubleLine(label, v and Coin(v) or "|cff808080none listed|r", 1, .82, 0, 1, 1, 1)
         AddDisenchantLine(tt, id)
         AddCrateLine(tt, id)
+        AddWritLine(tt, id)
     else
         tt:AddDoubleLine("AH", "|cff808080no scan yet|r", 1, .82, 0, 1, 1, 1)
     end
@@ -914,6 +916,61 @@ AddCrateLine = function(tt, id)
             .. (bestCrafted and " |cff808080(made yourself)|r" or ""), " ", 1, 1, 1, 1, 1, 1)
     else
         tt:AddDoubleLine(label, "|cff808080none of its fills are on the AH|r", 1, .82, 0, 1, 1, 1)
+    end
+end
+
+---------------------------------------------------------------------------
+-- Craftsman's Writs (Light's Hope): "Craftsman's Writ - Dense Weightstone"
+-- asks for 120 Dense Weightstone. The tooltip shows what that costs at the
+-- last AH scan, and what it costs to make yourself if you know the recipe.
+-- Matched by the writ's name; item IDs are checked by name like the crates.
+---------------------------------------------------------------------------
+local WRITS = {
+    ["Potion of Petrification"]          = { 1,   13506 },
+    ["Greater Arcane Protection Potion"] = { 15,  13461 },
+    ["Major Healing Potion"]             = { 20,  13446 },
+    ["Major Mana Potion"]                = { 10,  13444 },
+    ["Dense Weightstone"]                = { 120, 12643 },
+    ["Huge Thorium Battleaxe"]           = { 3,   12775 },
+    ["Imperial Plate Chest"]             = { 3,   12618 },
+    ["Volcanic Hammer"]                  = { 3,   12792 },
+    ["Radiant Circlet"]                  = { 3,   12417 },
+    ["Thorium Grenade"]                  = { 20,  15993 },
+    ["Thorium Tube"]                     = { 14,  16000 },
+    ["Gnomish Battle Chicken"]           = { 4,   10725 },
+    ["Goblin Sapper Charge"]             = { 20,  10646 },
+    ["Lightning Eel"]                    = { 30,  13757 },
+    ["Plated Armorfish"]                 = { 30,  13890 },
+    ["Stonescale Eel"]                   = { 40,  13422 },
+    ["Rugged Armor Kit"]                 = { 25,  15564 },
+    ["Runic Leather Pants"]              = { 4,   15096 },
+    ["Wicked Leather Belt"]              = { 10,  15088 },
+    ["Wicked Leather Headband"]          = { 10,  15086 },
+    ["Brightcloth Pants"]                = { 6,   14104 },
+    ["Runecloth Bag"]                    = { 8,   14046 },
+    ["Runecloth Boots"]                  = { 8,   13864 },
+    ["Runecloth Robe"]                   = { 8,   13858 },
+}
+
+AddWritLine = function(tt, id)
+    local name = C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(id)
+    if not name then name = tt.GetItem and tt:GetItem() end
+    local want = name and name:match("^Craftsman's Writ %- (.+)$")
+    local w = want and WRITS[want]
+    if not w then return end
+    local p = DB.prices[priceKey]
+    if not (p and p.time) then return end
+    local n, fid = w[1], FillID({ w[1], w[2], want })
+    local age = time() - p.time
+    local ageText = (age > STALE and "|cffff3333" or "|cff808080") .. Ago(age) .. "|r"
+    tt:AddDoubleLine("Writ: " .. n .. " x " .. want, " ", 1, .82, 0, 1, 1, 1)
+    local each = p.items[fid]
+    tt:AddDoubleLine("   Buy on AH " .. ageText,
+        each and Coin(math.floor(each * n + 0.5)) or "|cff808080not on the AH|r", 1, 1, 1, 1, 1, 1)
+    if Me().crafts and Me().crafts[fid] then
+        local ok, c = pcall(ItemCost, fid, p, {}, {}, 0, {})
+        tt:AddDoubleLine("   Make yourself",
+            ok and c and Coin(math.floor(c * n + 0.5)) or "|cff808080reagents not on the AH|r", 1, 1, 1, 1, 1, 1)
     end
 end
 

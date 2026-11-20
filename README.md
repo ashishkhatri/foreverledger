@@ -11,6 +11,7 @@ A minimalist WoW Forever addon that does seven things:
 5. **Crafting cost and profit.** In your professions window, each recipe in the list shows what its reagents cost at the last auction house scan's prices (a grey +? means a reagent had no price). The selected recipe shows its profit after the AH's 5% cut, with the scan's age beside it; hover it for a breakdown per reagent. Reagents you can make yourself are priced by what their own reagents cost.
 6. **Disenchant value.** Armor and weapons of uncommon quality and up show their average disenchant value under the AH price: the Classic disenchant chances for their item level, quality and type, with each material at its last AH scan price. Soulbound gear shows it too.
 7. **Waylaid Crates.** A crate's tooltip shows its cheapest fill at the last AH scan's prices (for example 20 x Peacebloom), or the crafting cost if you can make a fill item for less.
+   **Craftsman's Writs** work the same way: the tooltip shows what the writ asks for (for example 120 x Dense Weightstone), what that costs on the AH, and what it costs to make yourself if you know the recipe.
 
 ## Install
 
