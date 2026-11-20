@@ -1446,9 +1446,60 @@ function H.ADDON_LOADED(name)
     if DB.auto == nil then DB.auto = true end
 end
 
+-- The realm name. The game sometimes reports it as blank; then use the last
+-- one seen, or (for older saves) the realm your characters are on.
+local function CurrentRealm(name)
+    local r = GetRealmName()
+    if not r or r == "" then r = GetNormalizedRealmName and GetNormalizedRealmName() end
+    if r and r ~= "" then DB.lastRealm = r; return r end
+    if DB.lastRealm then return DB.lastRealm end
+    -- your own character on exactly one realm, else the only realm there is
+    local mine, mineMany, only, many = nil, false, nil, false
+    for _, c in pairs(DB.chars) do
+        if c.realm and c.realm ~= "" then
+            if c.name == name then
+                if mine and mine ~= c.realm then mineMany = true end
+                mine = mine or c.realm
+            end
+            if only and only ~= c.realm then many = true end
+            only = only or c.realm
+        end
+    end
+    r = (not mineMany and mine) or (not many and only) or nil
+    if r then DB.lastRealm = r end
+    return r or ""
+end
+
+-- characters and prices saved while the realm name was blank go back under
+-- the real realm (they're the newer copies)
+local function RepairBlankRealm()
+    if realm == "" then return end
+    local chars, prices = {}, {}
+    for k, c in pairs(DB.chars) do
+        if c.realm == "" or c.realm == nil then chars[k] = c end
+    end
+    for k, p in pairs(DB.prices) do
+        local faction = k:match("^%-(.+)$")
+        if faction then prices[k] = faction end
+    end
+    for k, c in pairs(chars) do
+        DB.chars[k] = nil
+        c.realm = realm
+        DB.chars[(c.name or "?") .. "-" .. realm] = c
+    end
+    for k, faction in pairs(prices) do
+        local p = DB.prices[k]
+        DB.prices[k] = nil
+        local key = realm .. "-" .. faction
+        local old = DB.prices[key]
+        if not old or (p.time or 0) > (old.time or 0) then DB.prices[key] = p end
+    end
+end
+
 function H.PLAYER_LOGIN()
-    realm = GetRealmName()
     local name = UnitName("player")
+    realm = CurrentRealm(name)
+    RepairBlankRealm()
     me = name .. "-" .. realm
     priceKey = realm .. "-" .. (UnitFactionGroup("player") or "?")
     local c = Me()
