@@ -922,13 +922,10 @@ end
 
 ---------------------------------------------------------------------------
 -- Craftsman's Writs. WoW Forever's writs ("Craftsman's Writ: Heavy Leather
--- Ball") are world drops, each asking for a number of one item. The number
--- isn't on the writ, so it's learned from the quest the first time you have
--- it in your quest log or hand it in, and remembered for every character.
--- The tooltip shows that many at the last AH scan's prices, and what it
--- costs to make yourself if you know the recipe.
--- The original Light's Hope writs ("Craftsman's Writ - Dense Weightstone")
--- have known amounts.
+-- Ball") are world drops that each ask for one of an item. The tooltip shows
+-- its price at the last AH scan, and what it costs to make yourself if you
+-- know the recipe. The original Light's Hope writs ("Craftsman's Writ -
+-- Dense Weightstone") ask for set amounts.
 ---------------------------------------------------------------------------
 local OLD_WRITS = {
     ["Potion of Petrification"] = 1, ["Greater Arcane Protection Potion"] = 15,
@@ -941,9 +938,13 @@ local OLD_WRITS = {
     ["Brightcloth Pants"] = 6, ["Runecloth Bag"] = 8, ["Runecloth Boots"] = 8, ["Runecloth Robe"] = 8,
 }
 
+-- what a writ asks for, and how many
 local function WritWants(writName)
     if not writName then return end
-    return writName:match("^Craftsman's Writ: (.+)$") or writName:match("^Craftsman's Writ %- (.+)$")
+    local want = writName:match("^Craftsman's Writ: (.+)$")
+    if want then return want, 1 end
+    want = writName:match("^Craftsman's Writ %- (.+)$")
+    if want and OLD_WRITS[want] then return want, OLD_WRITS[want] end
 end
 
 -- the item ID for a name: from the game if it knows it, else from a scan or your recipes
@@ -957,46 +958,24 @@ local function IDForName(name)
     return DB.itemNames[name]
 end
 
--- learn how many a writ asks for from your quest log
-local function LearnWritsFromLog()
-    if not (C_QuestLog and C_QuestLog.GetNumQuestLogEntries) then return end
-    for i = 1, C_QuestLog.GetNumQuestLogEntries() do
-        local info = C_QuestLog.GetInfo(i)
-        local want = info and not info.isHeader and WritWants(info.title)
-        if want then
-            local objs = C_QuestLog.GetQuestObjectives(info.questID)
-            for _, o in ipairs(objs or {}) do
-                if o.type == "item" and o.numRequired and o.numRequired > 0 then
-                    DB.writs[want] = o.numRequired
-                    break
-                end
-            end
-        end
-    end
-end
-
 AddWritLine = function(tt, id)
     local name = C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(id)
     if not name then name = tt.GetItem and tt:GetItem() end
-    local want = WritWants(name)
+    local want, n = WritWants(name)
     if not want then return end
-    local n = DB.writs[want] or OLD_WRITS[want]
     local p = DB.prices[priceKey]
-    tt:AddDoubleLine("Writ: " .. (n and (n .. " x ") or "") .. want, " ", 1, .82, 0, 1, 1, 1)
-    if not n then
-        tt:AddLine("   |cff808080Amount not known yet: accept a writ for this once to learn it.|r", 1, 1, 1, true)
-    end
+    tt:AddDoubleLine("Writ: " .. (n > 1 and (n .. " x ") or "") .. want, " ", 1, .82, 0, 1, 1, 1)
     if not (p and p.time) then return end
     local fid = IDForName(want)
     local age = time() - p.time
     local ageText = (age > STALE and "|cffff3333" or "|cff808080") .. Ago(age) .. "|r"
-    local mult = n or 1
+    local mult = n
     local each = fid and p.items[fid]
-    tt:AddDoubleLine("   Buy on AH " .. ageText .. (n and "" or " |cff808080(each)|r"),
+    tt:AddDoubleLine("   Buy on AH " .. ageText,
         each and Coin(math.floor(each * mult + 0.5)) or "|cff808080not on the AH|r", 1, 1, 1, 1, 1, 1)
     if fid and Me().crafts and Me().crafts[fid] then
         local ok, c = pcall(ItemCost, fid, p, {}, {}, 0, {})
-        tt:AddDoubleLine("   Make yourself" .. (n and "" or " |cff808080(each)|r"),
+        tt:AddDoubleLine("   Make yourself",
             ok and c and Coin(math.floor(c * mult + 0.5)) or "|cff808080reagents not on the AH|r", 1, 1, 1, 1, 1, 1)
     end
 end
@@ -1532,7 +1511,6 @@ function H.ADDON_LOADED(name)
     DB.chars = DB.chars or {}
     DB.prices = DB.prices or {}
     DB.itemNames = DB.itemNames or {}   -- item name -> ID, from scans and recipes
-    DB.writs = DB.writs or {}           -- writ item name -> how many it asks for
     if DB.auto == nil then DB.auto = true end
 end
 
@@ -1618,17 +1596,6 @@ function H.MERCHANT_CLOSED() merchantOpen = false end
 function H.PLAYER_EQUIPMENT_CHANGED() ScanEquip(); QueueBags() end
 H.BAG_CONTAINER_UPDATE = QueueBags
 function H.PLAYER_MONEY() Me().gold = GetMoney() end
-function H.QUEST_ACCEPTED() C_Timer.After(1, LearnWritsFromLog) end
-function H.QUEST_LOG_UPDATE() LearnWritsFromLog() end
--- handing a writ in: the required items are listed
-function H.QUEST_PROGRESS()
-    local want = WritWants(GetTitleText and GetTitleText())
-    if not want or not GetNumQuestItems then return end
-    for i = 1, GetNumQuestItems() do
-        local iname, _, count = GetQuestItemInfo("required", i)
-        if count and count > 0 then DB.writs[want] = count; break end
-    end
-end
 H.MAIL_INBOX_UPDATE = ScanMail
 
 local readyTicker
