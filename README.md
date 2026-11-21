@@ -5,7 +5,7 @@
 A minimalist WoW Forever addon that does seven things:
 
 1. **Alt inventory on tooltips.** Hover any item to see how many each of your characters has, with an icon for where it is: bags, bank, mail or equipped. Hover your gold (the backpack button, or the coins at the bottom of your bags) to see every character's gold and a total. The game's vendor sell price is moved down next to the AH price, so the prices sit together. Every price is for one item, not the whole stack.
-2. **Auction house prices on tooltips.** While the auction house is open, Forever Item Tracker PLUS runs a full scan automatically (at most once an hour), with a small progress bar above the auction house window. Stay at the auction house until it says the scan is complete. Tradeable items then show the lowest buyout per unit from the last scan and how long ago it ran. The age turns red after 12 hours.
+2. **Auction house prices on tooltips.** While the auction house is open, Forever Item Tracker PLUS runs a full scan automatically (at most once an hour), with a small progress bar above the auction house window. Stay at the auction house until it says the scan is complete. The **Full Scan** button under the auction house window scans on demand and counts down when the server needs you to wait (one full scan per 15 minutes); right-click it to turn automatic scans on or off. Tradeable items then show the lowest buyout per unit from the last scan and how long ago it ran. The age turns red after 12 hours.
 3. **Bank restocking.** At the bank, the **Deposit** button (bag → bank, below the bank window) moves every item in your bags that the bank already has into the bank, and **Withdraw** (bank → bag) moves every item in your bank that your bags already have into your bags. To move just one item, Ctrl+click it: every stack of it goes to the other side.
 4. **Sell all of an item.** At a vendor, Ctrl+right-click an item in your bags to sell every stack of it you're carrying. The total it sold for is printed in chat.
 5. **Crafting cost and profit.** In your professions window, each recipe in the list shows what its reagents cost at the last auction house scan's prices (a grey +? means a reagent had no price). The selected recipe shows its profit after the AH's 5% cut, with the scan's age beside it; hover it for a breakdown per reagent. Reagents you can make yourself are priced by what their own reagents cost.
@@ -37,7 +37,7 @@ Use `/fitp` or `/itemtracker`.
 
 ## Notes
 
-- A full auction house scan can freeze the game for a few seconds on busy realms. Use `/fitp auto` to turn it off and scan by hand instead.
+- A full auction house scan can freeze the game for a few seconds on busy realms. Right-click the Full Scan button (or type `/fitp auto`) to turn it off and scan by hand instead.
 - Prices are stored per realm and faction, so a scan at a neutral auction house replaces your faction's prices.
 - Mail sent to an alt is counted once you open that alt's mailbox.
 

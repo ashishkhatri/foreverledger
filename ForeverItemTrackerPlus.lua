@@ -1629,8 +1629,68 @@ function H.PLAYER_MONEY() Me().gold = GetMoney() end
 H.MAIL_INBOX_UPDATE = ScanMail
 
 local readyTicker
+-- "Full Scan" button under the auction house window, by the tabs.
+-- Left-click scans now; right-click turns automatic scans on or off.
+local scanButton
+local function CreateScanButton()
+    local ah = AuctionHouseFrame or AuctionFrame
+    if scanButton or not ah then return end
+    local b = CreateFrame("Button", nil, ah, "UIPanelButtonTemplate")
+    scanButton = b
+    b:SetSize(110, 22)
+    b:SetPoint("TOPRIGHT", ah, "BOTTOMRIGHT", -6, -2)
+    b:SetText("Full Scan")
+    b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    local function tip(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine("Full Scan")
+        local p = DB.prices[priceKey]
+        GameTooltip:AddLine("Last scan: " .. (p and p.time and Ago(time() - p.time) or "never"), 1, 1, 1)
+        local wait = p and p.asked and SERVER_COOLDOWN - (time() - p.asked)
+        if wait and wait > 0 then
+            GameTooltip:AddLine(string.format("Next scan possible in %d min.", math.ceil(wait / 60)), 1, 0.5, 0.25)
+        end
+        GameTooltip:AddLine("Automatic scans (at most once an hour): " .. (DB.auto and "|cff33ff33on|r" or "|cffff3333off|r"), 1, 1, 1)
+        GameTooltip:AddLine("Left-click to scan now. Right-click to turn automatic scans on or off.", 0.6, 0.6, 0.6, true)
+        GameTooltip:Show()
+    end
+    -- the button's text counts down until the server allows the next scan
+    -- (grayed while waiting; it stays clickable so right-click still works)
+    local since = 1
+    b:SetScript("OnUpdate", function(self, elapsed)
+        since = since + elapsed
+        if since < 1 then return end
+        since = 0
+        local p = DB.prices[priceKey]
+        local wait = p and p.asked and SERVER_COOLDOWN - (time() - p.asked)
+        if scanning then
+            self:SetText("Scanning...")
+            self:GetFontString():SetTextColor(0.6, 0.6, 0.6)
+        elseif wait and wait > 0 then
+            self:SetText(wait >= 60 and string.format("Scan in %dm", math.ceil(wait / 60))
+                or string.format("Scan in %ds", wait))
+            self:GetFontString():SetTextColor(0.6, 0.6, 0.6)
+        else
+            self:SetText("Full Scan")
+            self:GetFontString():SetTextColor(1, 0.82, 0)
+        end
+    end)
+    b:SetScript("OnEnter", tip)
+    b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    b:SetScript("OnClick", function(self, button)
+        if button == "RightButton" then
+            DB.auto = not DB.auto
+            Msg("automatic scanning %s.", DB.auto and "on" or "off")
+        else
+            TryScan(true)
+        end
+        if GameTooltip:IsOwned(self) then tip(self) end
+    end)
+end
+
 function H.AUCTION_HOUSE_SHOW()
     ahOpen = true
+    CreateScanButton()
     Log("auction house opened")
     C_Timer.After(1, function() TryScan() end)
     if ticker then ticker:Cancel() end
