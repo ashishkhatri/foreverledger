@@ -505,7 +505,7 @@ local function Process()
         ShowProgress("Scan came back empty; will retry", nil, 5)
         return
     end
-    local items, i, missing = {}, 1, 0
+    local items, byName, i, missing = {}, {}, 1, 0
     local function step()
         -- stop if the AH closed or a normal search replaced the results
         if not ahOpen or (getN() or 0) ~= n then
@@ -520,7 +520,13 @@ local function Process()
         for j = i, last do
             local iname, _, count, _, _, _, _, _, _, buyout, _, _, _, _, _, _, id, hasAll = getInfo(j)
             if hasAll == false then missing = missing + 1 end
-            if iname and id and iname ~= "" then DB.itemNames[iname] = id end
+            if iname and id and iname ~= "" then
+                DB.itemNames[iname] = id
+                if buyout and buyout > 0 then
+                    local e = math.floor(buyout / math.max(count or 1, 1))
+                    if not byName[iname] or e < byName[iname] then byName[iname] = e end
+                end
+            end
             if id and buyout and buyout > 0 then
                 local each = math.floor(buyout / math.max(count or 1, 1))
                 if not items[id] or each < items[id] then items[id] = each end
@@ -531,7 +537,7 @@ local function Process()
             C_Timer.After(0, step)
         else
             local p = Prices()
-            p.items, p.time = items, time()
+            p.items, p.byName, p.time = items, byName, time()
             scanning = false
             local k = 0
             for _ in pairs(items) do k = k + 1 end
@@ -990,10 +996,11 @@ AddWritLine = function(tt, id)
     local age = time() - p.time
     local ageText = (age > STALE and "|cffff3333" or "|cff808080") .. Ago(age) .. "|r"
     local mult = n
-    local each = fid and p.items[fid]
+    -- the price by the item's name (saved by the scan), else by its ID
+    local each = (p.byName and p.byName[want]) or (fid and p.items[fid])
     tt:AddDoubleLine("   Buy on AH " .. ageText,
         each and Coin(math.floor(each * mult + 0.5))
-            or (fid and "|cff808080not on the AH|r" or "|cff808080item not identified yet|r"), 1, 1, 1, 1, 1, 1)
+            or "|cff808080not on the AH|r", 1, 1, 1, 1, 1, 1)
     if fid and Me().crafts and Me().crafts[fid] then
         local ok, c = pcall(ItemCost, fid, p, {}, {}, 0, {})
         tt:AddDoubleLine("   Make yourself",
