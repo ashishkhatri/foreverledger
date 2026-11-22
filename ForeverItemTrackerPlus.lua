@@ -463,7 +463,7 @@ end
 local function ShowProgress(text, frac, hideAfter)
     local b = ProgressUI()
     if not b then return end
-    if scanning and SellOpen() then text = text .. "  |cffff8040wait to post|r" end
+    if scanning and SellOpen() then text = text .. "  |cffff8040posting after the scan|r" end
     b.text:SetText(text)
     if frac then
         b.fill:SetWidth(math.max(0.001, BAR_W * math.min(frac, 1)))
@@ -1641,6 +1641,37 @@ function H.PLAYER_MONEY() Me().gold = GetMoney() end
 H.MAIL_INBOX_UPDATE = ScanMail
 
 local readyTicker
+-- The game's Post buttons: grayed out while a scan runs (posting fails
+-- then), back to normal when it ends. Only their enabled state is touched,
+-- after the game sets it, so the game's own posting code is untouched.
+local function SellFrames()
+    local ah = AuctionHouseFrame
+    return ah and ah.CommoditiesSellFrame, ah and ah.ItemSellFrame
+end
+local postHooked
+local function HookPostButtons()
+    if postHooked then return end
+    postHooked = true
+    for _, f in ipairs({ SellFrames() }) do
+        if f and f.UpdatePostButtonState then
+            hooksecurefunc(f, "UpdatePostButtonState", function(self)
+                if scanning and self.PostButton then self.PostButton:SetEnabled(false) end
+            end)
+        end
+    end
+end
+local function RefreshPostButtons()
+    for _, f in ipairs({ SellFrames() }) do
+        if f and f.PostButton then
+            if scanning then
+                f.PostButton:SetEnabled(false)
+            elseif f.UpdatePostButtonState then
+                pcall(f.UpdatePostButtonState, f)    -- let the game decide again
+            end
+        end
+    end
+end
+
 -- "Full Scan" button under the auction house window, by the tabs.
 -- Left-click scans now; right-click turns automatic scans on or off.
 local scanButton
@@ -1668,8 +1699,13 @@ local function CreateScanButton()
     end
     -- the button's text counts down until the server allows the next scan
     -- (grayed while waiting; it stays clickable so right-click still works)
-    local since = 1
+    local since, wasScanning = 1, false
+    HookPostButtons()
     b:SetScript("OnUpdate", function(self, elapsed)
+        if scanning ~= wasScanning then
+            wasScanning = scanning
+            RefreshPostButtons()
+        end
         since = since + elapsed
         if since < 1 then return end
         since = 0
