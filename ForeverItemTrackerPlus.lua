@@ -2233,9 +2233,38 @@ do
         win.pos:SetPoint("BOTTOMRIGHT", -20, 30)
         win.foot = win:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         win.foot:SetPoint("BOTTOMLEFT", 20, 12)
+        -- hover the totals: earned and spent by source
+        local hover = CreateFrame("Frame", nil, win)
+        hover:SetPoint("TOPLEFT", win.foot, "TOPLEFT", -2, 3)
+        hover:SetPoint("BOTTOMRIGHT", win.foot, "BOTTOMRIGHT", 2, -3)
+        hover:EnableMouse(true)
+        hover:SetScript("OnEnter", function(self)
+            local earned, spent, ein, eout = {}, {}, 0, 0
+            for _, r in ipairs(Filtered()) do
+                if r[5] > 0 then earned[r[3]] = (earned[r[3]] or 0) + r[5]; ein = ein + r[5]
+                else spent[r[3]] = (spent[r[3]] or 0) - r[5]; eout = eout - r[5] end
+            end
+            local function Section(title, t, total, r, g, b)
+                GameTooltip:AddDoubleLine(title, Coin(total), r, g, b, 1, 1, 1)
+                local list = {}
+                for src, v in pairs(t) do list[#list + 1] = { src, v } end
+                table.sort(list, function(a, b2) return a[2] > b2[2] end)
+                for _, e in ipairs(list) do
+                    GameTooltip:AddDoubleLine("   " .. e[1], Coin(e[2]), 1, 1, 1, 1, 1, 1)
+                end
+                if #list == 0 then GameTooltip:AddLine("   nothing", 0.5, 0.5, 0.5) end
+            end
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:AddLine(who and ColoredName(DB.chars[who]) or "All characters")
+            Section("Earned", earned, ein, 0.4, 1, 0.4)
+            GameTooltip:AddLine(" ")
+            Section("Spent", spent, eout, 1, 0.45, 0.45)
+            GameTooltip:Show()
+        end)
+        hover:SetScript("OnLeave", function() GameTooltip:Hide() end)
         local tip = win:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
         tip:SetPoint("BOTTOMLEFT", 20, 30)
-        tip:SetText("Scroll to move (Shift: a page). Click a column to sort.")
+        tip:SetText("Scroll to move (Shift: a page). Click a column to sort. Hover the totals for a breakdown.")
         win:SetScript("OnShow", LedgerRefresh)
         win:Hide()          -- new frames start shown; the first click then opens it
     end
