@@ -1035,11 +1035,18 @@ AddWritLine = function(tt, id)
     end
 end
 
-local function OnItemTooltip(tt)
+local function OnItemTooltip(tt, data)
     if not DB or tt.fitpDone then return end
     if tt ~= GameTooltip and tt ~= ItemRefTooltip then return end
+    -- a recipe's tooltip has the item it makes inside it, and the game runs
+    -- this for that inner item too: only count the item actually hovered
+    if type(data) == "table" and data.id and tt.GetPrimaryTooltipData then
+        local primary = tt:GetPrimaryTooltipData()
+        if primary and primary.id and primary.id ~= data.id then return end
+    end
     local _, link = tt:GetItem()
     local id = LinkID(link)
+    if type(data) == "table" and data.id and data.id ~= id then id = data.id end
     if not id then return end
     tt.fitpDone = true
     AddItemLines(tt, id)
