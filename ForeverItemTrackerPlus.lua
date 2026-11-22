@@ -1807,12 +1807,393 @@ end)
 ---------------------------------------------------------------------------
 -- /fitp, /itemtracker
 ---------------------------------------------------------------------------
+local LedgerRefresh
+---------------------------------------------------------------------------
+-- Ledger: every copper in and out, per character, per day, by where it
+-- came from or went. Each change in your gold is filed under whatever you
+-- were doing at that moment (a vendor window, the mailbox, a flight...).
+-- Opened from the minimap button (or /fitp ledger).
+---------------------------------------------------------------------------
+local OpenLedger
+do
+    local CATS = {
+        { "loot", "Loot" }, { "quest", "Quests" }, { "vendor", "Vendors" }, { "repair", "Repairs" },
+        { "ah", "Auction house" }, { "mail", "Mail" }, { "trade", "Trades" }, { "train", "Training" },
+        { "taxi", "Flights" }, { "guild", "Guild bank" }, { "other", "Other" },
+    }
+    local LABEL = {}
+    for _, c in ipairs(CATS) do LABEL[c[1]] = c[2] end
+
+    local open = {}                    -- game windows open right now
+    local oneShot, oneShotUntil = nil, 0
+    local lastMoney
+
+    -- a money change in the next few seconds belongs to this
+    local function Expect(cat) oneShot, oneShotUntil = cat, GetTime() + 3 end
+
+    local function Context()
+        if oneShot and GetTime() < oneShotUntil then return oneShot end
+        if open.trade then return "trade" end
+        if open.loot then return "loot" end
+        if open.quest then return "quest" end
+        if open.ah then return "ah" end
+        if open.merchant then return "vendor" end
+        if open.train then return "train" end
+        if open.taxi then return "taxi" end
+        if open.guild then return "guild" end
+        if open.mail then return "mail" end
+        return "other"
+    end
+
+    local function Record(delta)
+        local c = Me()
+        c.ledger = c.ledger or {}
+        local day = date("%Y-%m-%d")
+        local d = c.ledger[day] or {}
+        c.ledger[day] = d
+        local cat = Context()
+        local e = d[cat] or { 0, 0 }           -- { earned, spent }
+        d[cat] = e
+        if delta > 0 then e[1] = e[1] + delta else e[2] = e[2] - delta end
+        if OpenLedger and LedgerRefresh then LedgerRefresh() end
+    end
+
+    local ev = CreateFrame("Frame")
+    local WINDOWS = {
+        MERCHANT_SHOW = { "merchant", true }, MERCHANT_CLOSED = { "merchant", false },
+        AUCTION_HOUSE_SHOW = { "ah", true }, AUCTION_HOUSE_CLOSED = { "ah", false },
+        MAIL_SHOW = { "mail", true }, MAIL_CLOSED = { "mail", false },
+        TRADE_SHOW = { "trade", true }, TRADE_CLOSED = { "trade", false },
+        TRAINER_SHOW = { "train", true }, TRAINER_CLOSED = { "train", false },
+        TAXIMAP_OPENED = { "taxi", true }, TAXIMAP_CLOSED = { "taxi", false },
+        GUILDBANKFRAME_OPENED = { "guild", true }, GUILDBANKFRAME_CLOSED = { "guild", false },
+        LOOT_OPENED = { "loot", true }, LOOT_CLOSED = { "loot", false },
+        QUEST_COMPLETE = { "quest", true }, QUEST_FINISHED = { "quest", false },
+    }
+    -- the modern client reports most NPC windows through one event
+    local INTERACTION = {}
+    if Enum and Enum.PlayerInteractionType then
+        local T = Enum.PlayerInteractionType
+        for name, cat in pairs({ Merchant = "merchant", Trainer = "train", TaxiNode = "taxi",
+            MailInfo = "mail", GuildBanker = "guild", Auctioneer = "ah" }) do
+            if T[name] then INTERACTION[T[name]] = cat end
+        end
+    end
+    -- money that lands just after a window closes
+    local AFTER = { TRADE_CLOSED = "trade", LOOT_CLOSED = "loot", QUEST_FINISHED = "quest" }
+
+    ev:SetScript("OnEvent", function(_, e, arg)
+        if e == "PLAYER_ENTERING_WORLD" then
+            lastMoney = GetMoney()
+        elseif e == "PLAYER_MONEY" then
+            local now = GetMoney()
+            if lastMoney and DB and me and now ~= lastMoney then Record(now - lastMoney) end
+            lastMoney = now
+        elseif e == "PLAYER_INTERACTION_MANAGER_FRAME_SHOW" then
+            if INTERACTION[arg] then open[INTERACTION[arg]] = true end
+        elseif e == "PLAYER_INTERACTION_MANAGER_FRAME_HIDE" then
+            if INTERACTION[arg] then open[INTERACTION[arg]] = false end
+        elseif e == "QUEST_TURNED_IN" then
+            Expect("quest")
+        elseif e == "CHAT_MSG_MONEY" then
+            Expect("loot")
+        elseif WINDOWS[e] then
+            open[WINDOWS[e][1]] = WINDOWS[e][2]
+            if AFTER[e] then Expect(AFTER[e]) end
+        end
+    end)
+    for e in pairs(WINDOWS) do pcall(ev.RegisterEvent, ev, e) end
+    for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "PLAYER_MONEY", "PLAYER_INTERACTION_MANAGER_FRAME_SHOW",
+        "PLAYER_INTERACTION_MANAGER_FRAME_HIDE", "QUEST_TURNED_IN", "CHAT_MSG_MONEY" }) do
+        pcall(ev.RegisterEvent, ev, e)
+    end
+
+    -- things that cost or pay money without a window of their own
+    local function Hook(name, fn) if _G[name] then hooksecurefunc(name, fn) end end
+    Hook("RepairAllItems", function() Expect("repair") end)
+    local function RepairClick() if InRepairMode and InRepairMode() then Expect("repair") end end
+    Hook("PickupInventoryItem", RepairClick)
+    if C_Container and C_Container.PickupContainerItem then
+        hooksecurefunc(C_Container, "PickupContainerItem", RepairClick)
+    end
+    Hook("TakeTaxiNode", function() Expect("taxi") end)
+    -- mail: auction house mail (sales, refunds) vs mail from players
+    local function MailMoney(index)
+        local kind = GetInboxInvoiceInfo and GetInboxInvoiceInfo(index)
+        Expect(kind and "ah" or "mail")
+    end
+    Hook("TakeInboxMoney", MailMoney)
+    Hook("AutoLootMailItem", MailMoney)
+
+    -----------------------------------------------------------------------
+    -- The window
+    -----------------------------------------------------------------------
+    local win, rows, lines
+    local who = nil                    -- character key, or nil for all characters
+    local picked = "all"               -- "all" or a day "YYYY-MM-DD"
+    local ROW_H, LIST_W = 18, 190
+
+    local function Chars()
+        if who then return { DB.chars[who] } end
+        local list = {}
+        for _, k in ipairs(SortedChars()) do list[#list + 1] = DB.chars[k] end
+        return list
+    end
+
+    -- { earned, spent } per category, for one day or all of them
+    local function Totals(day)
+        local t = {}
+        for _, c in ipairs(Chars()) do
+            for d, cats in pairs(c.ledger or {}) do
+                if day == "all" or d == day then
+                    for cat, e in pairs(cats) do
+                        local x = t[cat] or { 0, 0 }
+                        t[cat] = x
+                        x[1], x[2] = x[1] + e[1], x[2] + e[2]
+                    end
+                end
+            end
+        end
+        return t
+    end
+
+    local function Days()
+        local seen, list = {}, {}
+        for _, c in ipairs(Chars()) do
+            for d in pairs(c.ledger or {}) do
+                if not seen[d] then seen[d] = true; list[#list + 1] = d end
+            end
+        end
+        table.sort(list, function(a, b) return a > b end)
+        return list
+    end
+
+    local function Money(c, sign)
+        if c == 0 then return "|cff8080800|r" end
+        return (sign or "") .. Coin(c)
+    end
+
+    local function Net(t)
+        local n = 0
+        for _, e in pairs(t) do n = n + e[1] - e[2] end
+        return n
+    end
+
+    local function NetText(n)
+        if n > 0 then return "|cff33ff33+|r" .. Coin(n) end
+        if n < 0 then return "|cffff4444-|r" .. Coin(-n) end
+        return "|cff8080800|r"
+    end
+
+    local function DayLabel(d)
+        if d == "all" then return "All time" end
+        if d == date("%Y-%m-%d") then return "Today" end
+        if d == date("%Y-%m-%d", time() - 86400) then return "Yesterday" end
+        local y, m, dd = d:match("(%d+)-(%d+)-(%d+)")
+        local t = time({ year = tonumber(y), month = tonumber(m), day = tonumber(dd), hour = 12 })
+        return date("%a %b %d", t)
+    end
+
+    function LedgerRefresh()
+        if not (win and win:IsShown()) then return end
+        win.who:SetText(who and ColoredName(DB.chars[who]) or "All characters")
+        -- the day list
+        local days = Days()
+        table.insert(days, 1, "all")
+        for i, d in ipairs(days) do
+            local r = rows[i]
+            if not r then
+                r = CreateFrame("Button", nil, win.list)
+                r:SetSize(LIST_W - 4, ROW_H)
+                r:SetPoint("TOPLEFT", 2, -(i - 1) * ROW_H)
+                r.hl = r:CreateTexture(nil, "BACKGROUND")
+                r.hl:SetAllPoints()
+                r.day = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                r.day:SetPoint("LEFT", 4, 0)
+                r.net = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                r.net:SetPoint("RIGHT", -4, 0)
+                r:SetScript("OnClick", function(self) picked = self.key; LedgerRefresh() end)
+                rows[i] = r
+            end
+            r.key = d
+            r.day:SetText(DayLabel(d))
+            r.net:SetText(NetText(Net(Totals(d))))
+            r.hl:SetColorTexture(1, 1, 1, d == picked and 0.15 or 0)
+            r:Show()
+        end
+        for i = #days + 1, #rows do rows[i]:Hide() end
+        win.list:SetHeight(math.max(1, #days * ROW_H))
+        -- the breakdown
+        local t = Totals(picked)
+        for _, l in ipairs(lines) do l:Hide() end
+        local n = 0
+        local function Line(left, right, r, g, b)
+            n = n + 1
+            local l = lines[n]
+            if not l then
+                l = CreateFrame("Frame", nil, win.detail)
+                l:SetSize(260, 16)
+                l:SetPoint("TOPLEFT", 0, -(n - 1) * 16)
+                l.left = l:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                l.left:SetPoint("LEFT")
+                l.right = l:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                l.right:SetPoint("RIGHT")
+                lines[n] = l
+            end
+            l.left:SetText(left or "")
+            l.left:SetTextColor(r or 1, g or 1, b or 1)
+            l.right:SetText(right or "")
+            l:Show()
+        end
+        Line(DayLabel(picked), nil, 1, 0.82, 0)
+        Line()
+        local earned, spent = 0, 0
+        Line("Earned", nil, 0.4, 1, 0.4)
+        for _, c in ipairs(CATS) do
+            local e = t[c[1]]
+            if e and e[1] > 0 then Line("   " .. c[2], Coin(e[1])); earned = earned + e[1] end
+        end
+        if earned == 0 then Line("   nothing", nil, 0.5, 0.5, 0.5) end
+        Line()
+        Line("Spent", nil, 1, 0.45, 0.45)
+        for _, c in ipairs(CATS) do
+            local e = t[c[1]]
+            if e and e[2] > 0 then Line("   " .. c[2], Coin(e[2])); spent = spent + e[2] end
+        end
+        if spent == 0 then Line("   nothing", nil, 0.5, 0.5, 0.5) end
+        Line()
+        Line("Total earned", Money(earned))
+        Line("Total spent", Money(spent))
+        Line("Net", NetText(earned - spent), 1, 0.82, 0)
+    end
+
+    local function Build()
+        win = CreateFrame("Frame", "ForeverItemTrackerLedger", UIParent, "BasicFrameTemplateWithInset")
+        win:SetSize(500, 420)
+        win:SetPoint("CENTER")
+        win:SetFrameStrata("DIALOG")
+        win:SetMovable(true)
+        win:EnableMouse(true)
+        win:RegisterForDrag("LeftButton")
+        win:SetScript("OnDragStart", win.StartMoving)
+        win:SetScript("OnDragStop", win.StopMovingOrSizing)
+        win:SetClampedToScreen(true)
+        tinsert(UISpecialFrames, "ForeverItemTrackerLedger")       -- Escape closes it
+        local title = win.TitleText or win:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        if not win.TitleText then title:SetPoint("TOP", 0, -5) end
+        title:SetText("Ledger")
+
+        -- character picker: < name >
+        local prev = CreateFrame("Button", nil, win, "UIPanelButtonTemplate")
+        prev:SetSize(24, 22)
+        prev:SetPoint("TOPLEFT", 14, -32)
+        prev:SetText("<")
+        local nxt = CreateFrame("Button", nil, win, "UIPanelButtonTemplate")
+        nxt:SetSize(24, 22)
+        nxt:SetPoint("TOPRIGHT", -14, -32)
+        nxt:SetText(">")
+        win.who = win:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        win.who:SetPoint("TOP", 0, -36)
+        local function Step(dir)
+            local list = SortedChars()
+            local pos = 0                          -- 0 = all characters
+            for i, k in ipairs(list) do if k == who then pos = i end end
+            pos = (pos + dir) % (#list + 1)
+            who = pos > 0 and list[pos] or nil
+            picked = "all"
+            LedgerRefresh()
+        end
+        prev:SetScript("OnClick", function() Step(-1) end)
+        nxt:SetScript("OnClick", function() Step(1) end)
+
+        -- day list on the left
+        local scroll = CreateFrame("ScrollFrame", nil, win, "UIPanelScrollFrameTemplate")
+        scroll:SetPoint("TOPLEFT", 12, -64)
+        scroll:SetSize(LIST_W, 340)
+        win.list = CreateFrame("Frame", nil, scroll)
+        win.list:SetSize(LIST_W, 1)
+        scroll:SetScrollChild(win.list)
+        local sep = win:CreateTexture(nil, "ARTWORK")
+        sep:SetColorTexture(1, 1, 1, 0.12)
+        sep:SetSize(1, 340)
+        sep:SetPoint("TOPLEFT", scroll, "TOPRIGHT", 26, 0)
+
+        -- breakdown on the right
+        win.detail = CreateFrame("Frame", nil, win)
+        win.detail:SetPoint("TOPLEFT", sep, "TOPRIGHT", 12, 0)
+        win.detail:SetSize(260, 340)
+
+        rows, lines = {}, {}
+        win:SetScript("OnShow", LedgerRefresh)
+    end
+
+    OpenLedger = function()
+        if not win then Build() end
+        if win:IsShown() then win:Hide() else who = me; picked = "all"; win:Show() end
+    end
+
+    -----------------------------------------------------------------------
+    -- Minimap button (drag it around the minimap's edge)
+    -----------------------------------------------------------------------
+    local function MinimapButton()
+        if not Minimap or _G.ForeverItemTrackerMinimapButton then return end
+        local b = CreateFrame("Button", "ForeverItemTrackerMinimapButton", Minimap)
+        b:SetSize(31, 31)
+        b:SetFrameStrata("MEDIUM")
+        b:SetFrameLevel(8)
+        b:RegisterForClicks("LeftButtonUp")
+        b:RegisterForDrag("LeftButton")
+        local icon = b:CreateTexture(nil, "BACKGROUND")
+        icon:SetSize(20, 20)
+        icon:SetPoint("CENTER", 0, 1)
+        icon:SetTexture("Interface\\Icons\\INV_Misc_Coin_02")
+        icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        local border = b:CreateTexture(nil, "OVERLAY")
+        border:SetSize(53, 53)
+        border:SetPoint("TOPLEFT")
+        border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+        b:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+        local function Place()
+            local a = math.rad(DB.minimapAngle or 200)
+            local r = (Minimap:GetWidth() / 2) + 5
+            b:ClearAllPoints()
+            b:SetPoint("CENTER", Minimap, "CENTER", math.cos(a) * r, math.sin(a) * r)
+        end
+        Place()
+        b:SetScript("OnDragStart", function(self)
+            self:SetScript("OnUpdate", function()
+                local mx, my = Minimap:GetCenter()
+                local s = Minimap:GetEffectiveScale()
+                local cx, cy = GetCursorPosition()
+                DB.minimapAngle = math.deg(math.atan2(cy / s - my, cx / s - mx))
+                Place()
+            end)
+        end)
+        b:SetScript("OnDragStop", function(self) self:SetScript("OnUpdate", nil) end)
+        b:SetScript("OnClick", function() OpenLedger() end)
+        b:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+            GameTooltip:AddLine("Forever Item Tracker PLUS")
+            local t = 0
+            local d = Me().ledger and Me().ledger[date("%Y-%m-%d")]
+            for _, e in pairs(d or {}) do t = t + e[1] - e[2] end
+            GameTooltip:AddDoubleLine("Today", NetText(t), 1, 1, 1)
+            GameTooltip:AddLine("Click to open the ledger. Drag to move this button.", 0.6, 0.6, 0.6, true)
+            GameTooltip:Show()
+        end)
+        b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    end
+    ev:HookScript("OnEvent", function(_, e) if e == "PLAYER_ENTERING_WORLD" and DB then MinimapButton() end end)
+end
+
 SLASH_FITP1 = "/fitp"
 SLASH_FITP2 = "/itemtracker"
 SlashCmdList.FITP = function(msg)
     local cmd, arg = (msg or ""):match("^(%S*)%s*(.-)$")
     cmd = cmd:lower()
-    if cmd == "scanlog" then
+    if cmd == "ledger" then
+        OpenLedger()
+    elseif cmd == "scanlog" then
         Msg("scan log (%d lines):", #scanLog)
         for _, line in ipairs(scanLog) do Msg("  %s", line) end
         local p = DB.prices[priceKey]
@@ -1870,6 +2251,6 @@ SlashCmdList.FITP = function(msg)
         end
         Msg("no character named %s.", arg)
     else
-        Msg("/fitp scan  |  /fitp auto  |  /fitp gold  |  /fitp deposit  |  /fitp withdraw  |  /fitp bags  |  /fitp forget Name[-Realm]")
+        Msg("/fitp ledger  |  /fitp scan  |  /fitp auto  |  /fitp gold  |  /fitp deposit  |  /fitp withdraw  |  /fitp bags  |  /fitp forget Name[-Realm]")
     end
 end

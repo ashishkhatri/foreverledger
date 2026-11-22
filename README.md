@@ -10,6 +10,7 @@ A minimalist WoW Forever addon that does seven things:
 4. **Sell all of an item.** At a vendor, Ctrl+right-click an item in your bags to sell every stack of it you're carrying. The total it sold for is printed in chat.
 5. **Crafting cost and profit.** In your professions window, each recipe in the list shows what its reagents cost at the last auction house scan's prices (a grey +? means a reagent had no price). The selected recipe shows its profit after the AH's 5% cut, with the scan's age beside it; hover it for a breakdown per reagent. Reagents you can make yourself are priced by what their own reagents cost.
 6. **Disenchant value.** Armor and weapons of uncommon quality and up show their average disenchant value under the AH price: the Classic disenchant chances for their item level, quality and type, with each material at its last AH scan price. Soulbound gear shows it too.
+8. **Ledger.** Every copper each character earns or spends, by day and by where it came from or went: loot, quests, vendors, repairs, the auction house (sales mail counts here), mail, trades, training, flights, guild bank and anything else. Click the coin button on the minimap (drag it to move it) to open it: days on the left, with today's net at the top, and the breakdown for the day you click on the right. Use the arrows to switch characters or see all of them together. It records from the moment you install this version.
 7. **Waylaid Crates.** A crate's tooltip shows its cheapest fill at the last AH scan's prices (for example 20 x Peacebloom), or the crafting cost if you can make a fill item for less.
    **Craftsman's Writs** work the same way: the tooltip shows the item the writ asks for, its AH price, and what it costs to make yourself if you know the recipe.
 
@@ -27,6 +28,7 @@ Use `/fitp` or `/itemtracker`.
 
 | Command | What it does |
 | --- | --- |
+| `/fitp ledger` | Open the ledger (same as the minimap button) |
 | `/fitp scan` | Scan the auction house now (it must be open) |
 | `/fitp auto` | Turn automatic scanning on or off |
 | `/fitp gold` | Print every character's gold to chat |
