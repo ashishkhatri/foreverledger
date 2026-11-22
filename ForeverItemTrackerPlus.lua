@@ -1814,6 +1814,34 @@ end)
 ---------------------------------------------------------------------------
 -- /fitp, /itemtracker
 ---------------------------------------------------------------------------
+---------------------------------------------------------------------------
+-- Talking to a banker opens your bank straight away (hold Shift to see
+-- the banker's dialogue instead).
+---------------------------------------------------------------------------
+do
+    local BANK_ICON = 132050                      -- the gossip "bank" icon
+    local f = CreateFrame("Frame")
+    f:RegisterEvent("GOSSIP_SHOW")
+    f:SetScript("OnEvent", function()
+        if IsShiftKeyDown() then return end
+        if C_GossipInfo and C_GossipInfo.GetOptions then
+            for _, o in ipairs(C_GossipInfo.GetOptions() or {}) do
+                local icon = o.icon or o.overrideIconID
+                if icon == BANK_ICON or icon == "Interface\\GossipFrame\\BankerGossipIcon"
+                    or (o.name and o.name:lower():find("deposit box")) then
+                    C_GossipInfo.SelectOption(o.gossipOptionID)
+                    return
+                end
+            end
+        elseif GetGossipOptions and SelectGossipOption then
+            local opts = { GetGossipOptions() }
+            for i = 1, #opts, 2 do
+                if opts[i + 1] == "banker" then SelectGossipOption((i + 1) / 2); return end
+            end
+        end
+    end)
+end
+
 local LedgerRefresh
 ---------------------------------------------------------------------------
 -- Ledger: a list of every money transaction on every character, like a
