@@ -2209,6 +2209,7 @@ do
         tip:SetPoint("BOTTOMLEFT", 20, 30)
         tip:SetText("Scroll to move (Shift: a page). Click a column to sort.")
         win:SetScript("OnShow", LedgerRefresh)
+        win:Hide()          -- new frames start shown; the first click then opens it
     end
 
     OpenLedger = function()
