@@ -1842,11 +1842,40 @@ do
         return "other", nil
     end
 
+    -- Loot and Other are many small amounts: one row per character per day,
+    -- added up, with how many times
+    local ROLLUP = { Loot = true, Other = true }
+    local function Day(t) return date("%Y-%m-%d", t) end
+    local function RollupText(source, n)
+        if source == "Loot" then return n == 1 and "looted once" or ("looted " .. n .. " times") end
+        return n == 1 and "1 change" or (n .. " changes")
+    end
+    local function AddToRollup(source, who, t, delta, n)
+        local today = Day(t)
+        for i = #DB.ledger, 1, -1 do
+            local r = DB.ledger[i]
+            if Day(r[1]) ~= today then break end
+            if r[2] == who and r[3] == source then
+                r[1], r[5], r[7] = t, r[5] + delta, (r[7] or 1) + n
+                r[4] = RollupText(source, r[7])
+                return true
+            end
+        end
+    end
+
     local function Record(delta)
         DB.ledger = DB.ledger or {}
         local cat, detail = Context()
         local c = Me()
-        table.insert(DB.ledger, { time(), me, SOURCE[cat] or cat, detail or "", delta, c.class })
+        local source = SOURCE[cat] or cat
+        if ROLLUP[source] then
+            if not AddToRollup(source, me, time(), delta, 1) then
+                table.insert(DB.ledger, { time(), me, source, RollupText(source, 1), delta, c.class, 1 })
+            end
+            if LedgerRefresh then LedgerRefresh() end
+            return
+        end
+        table.insert(DB.ledger, { time(), me, source, detail or "", delta, c.class })
         while #DB.ledger > MAX_ROWS do table.remove(DB.ledger, 1) end
         if LedgerRefresh then LedgerRefresh() end
     end
@@ -2230,6 +2259,22 @@ do
         if e == "PLAYER_ENTERING_WORLD" and DB then
             MinimapButton()
             for _, c in pairs(DB.chars) do c.ledger = nil end   -- the old daily totals
+            -- fold rows recorded one by one before Loot / Other were added up
+            if DB.ledger and not DB.ledgerRolled then
+                local old = DB.ledger
+                DB.ledger = {}
+                for _, r in ipairs(old) do
+                    if ROLLUP[r[3]] then
+                        if not AddToRollup(r[3], r[2], r[1], r[5], r[7] or 1) then
+                            local n = r[7] or 1
+                            table.insert(DB.ledger, { r[1], r[2], r[3], RollupText(r[3], n), r[5], r[6], n })
+                        end
+                    else
+                        table.insert(DB.ledger, r)
+                    end
+                end
+                DB.ledgerRolled = true
+            end
         end
     end)
 end
