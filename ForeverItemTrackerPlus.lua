@@ -450,9 +450,20 @@ local function ProgressUI()
 end
 
 -- frac: 0..1 fills the bar, nil hides the fill. hideAfter: seconds, or nil to stay.
+-- On the Sell tab? Posting doesn't work while a full scan is running (the
+-- game's sell window errors when you click Post), so automatic scans wait
+-- until you're off it, and the bar warns you if you go there mid-scan.
+local function SellOpen()
+    local ah = AuctionHouseFrame
+    if not ah then return false end
+    return (ah.CommoditiesSellFrame and ah.CommoditiesSellFrame:IsShown())
+        or (ah.ItemSellFrame and ah.ItemSellFrame:IsShown()) or false
+end
+
 local function ShowProgress(text, frac, hideAfter)
     local b = ProgressUI()
     if not b then return end
+    if scanning and SellOpen() then text = text .. "  |cffff8040wait to post|r" end
     b.text:SetText(text)
     if frac then
         b.fill:SetWidth(math.max(0.001, BAR_W * math.min(frac, 1)))
@@ -566,6 +577,7 @@ local function TryScan(manual)
     local sinceAsk = p.asked and time() - p.asked
     if not manual then
         if not DB.auto or (p.time and time() - p.time < MIN_RESCAN) then return end
+        if SellOpen() then return end           -- try again when you're off the Sell tab
         if sinceAsk and sinceAsk < SERVER_COOLDOWN then return end
     elseif sinceAsk and sinceAsk < SERVER_COOLDOWN then
         local wait = math.ceil((SERVER_COOLDOWN - sinceAsk) / 60)
