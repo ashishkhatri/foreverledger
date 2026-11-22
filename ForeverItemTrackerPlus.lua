@@ -1839,7 +1839,8 @@ do
         for _, w in ipairs(ORDER) do
             if open[w] then return w, windowDetail[w] end
         end
-        return "other", nil
+        -- gold that arrives with no window open is your share of group loot
+        return "loot", nil
     end
 
     -- Loot and Other are many small amounts: one row per character per day,
@@ -2260,10 +2261,11 @@ do
             MinimapButton()
             for _, c in pairs(DB.chars) do c.ledger = nil end   -- the old daily totals
             -- fold rows recorded one by one before Loot / Other were added up
-            if DB.ledger and not DB.ledgerRolled then
+            if DB.ledger and not DB.ledgerRolled2 then
                 local old = DB.ledger
                 DB.ledger = {}
                 for _, r in ipairs(old) do
+                    if r[3] == "Other" then r[3] = "Loot" end     -- that was group loot
                     if ROLLUP[r[3]] then
                         if not AddToRollup(r[3], r[2], r[1], r[5], r[7] or 1) then
                             local n = r[7] or 1
@@ -2273,7 +2275,7 @@ do
                         table.insert(DB.ledger, r)
                     end
                 end
-                DB.ledgerRolled = true
+                DB.ledgerRolled, DB.ledgerRolled2 = nil, true
             end
         end
     end)
