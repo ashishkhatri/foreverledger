@@ -777,11 +777,25 @@ local function VendorEach(tt, id)
     end
     return price
 end
+-- how many are in the hovered stack (1 unless it's a stack in your bags or bank)
+local function StackCount(tt)
+    local owner = tt.GetOwner and tt:GetOwner()
+    local ok, bag, slot = pcall(function() return owner:GetBagID(), owner:GetID() end)
+    if ok and bag and slot and C_Container and C_Container.GetContainerItemInfo then
+        local info = C_Container.GetContainerItemInfo(bag, slot)
+        if info and info.stackCount and info.stackCount > 1 then return info.stackCount end
+    end
+    return 1
+end
+-- " x20" after a price label for a stack
+local function StackTag(n) return n > 1 and (" x" .. n) or "" end
+
 local function AddVendorLine(tt, id)
     if not sellMoved then return end
     local price = VendorEach(tt, id)
     if price and price > 0 then
-        tt:AddDoubleLine("Vendor", Coin(price), 1, .82, 0, 1, 1, 1)
+        local n = StackCount(tt)
+        tt:AddDoubleLine("Vendor" .. StackTag(n), Coin(price * n), 1, .82, 0, 1, 1, 1)
     end
 end
 
@@ -844,9 +858,10 @@ local function AddItemLines(tt, id)
     local p = DB.prices[priceKey]
     if p and p.time then
         local age = time() - p.time
-        local label = "AH " .. (age > STALE and "|cffff3333" or "|cff808080") .. Ago(age) .. "|r"
+        local n = StackCount(tt)
+        local label = "AH" .. StackTag(n) .. " " .. (age > STALE and "|cffff3333" or "|cff808080") .. Ago(age) .. "|r"
         local v = p.items[id]
-        tt:AddDoubleLine(label, v and Coin(v) or "|cff808080none listed|r", 1, .82, 0, 1, 1, 1)
+        tt:AddDoubleLine(label, v and Coin(v * n) or "|cff808080none listed|r", 1, .82, 0, 1, 1, 1)
         AddDisenchantLine(tt, id)
         AddCrateLine(tt, id)
         AddWritLine(tt, id)
