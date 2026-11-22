@@ -1809,54 +1809,49 @@ end)
 ---------------------------------------------------------------------------
 local LedgerRefresh
 ---------------------------------------------------------------------------
--- Ledger: every copper in and out, per character, per day, by where it
--- came from or went. Each change in your gold is filed under whatever you
--- were doing at that moment (a vendor window, the mailbox, a flight...).
+-- Ledger: a list of every money transaction on every character, like a
+-- spreadsheet: when, who, source, what it was, amount. Each change in your
+-- gold is filed under whatever you were doing at that moment (selling to a
+-- vendor, taking mail, a flight...) with the item, quest, player or place.
 -- Opened from the minimap button (or /fitp ledger).
 ---------------------------------------------------------------------------
 local OpenLedger
 do
-    local CATS = {
-        { "loot", "Loot" }, { "quest", "Quests" }, { "vendor", "Vendors" }, { "repair", "Repairs" },
-        { "ah", "Auction house" }, { "mail", "Mail" }, { "trade", "Trades" }, { "train", "Training" },
-        { "taxi", "Flights" }, { "guild", "Guild bank" }, { "other", "Other" },
-    }
-    local LABEL = {}
-    for _, c in ipairs(CATS) do LABEL[c[1]] = c[2] end
+    local MAX_ROWS = 10000              -- oldest are dropped past this
 
-    local open = {}                    -- game windows open right now
-    local oneShot, oneShotUntil = nil, 0
+    local open = {}                     -- game windows open right now
+    local expectCat, expectDetail, expectUntil = nil, nil, 0
+    local windowDetail = {}             -- detail for an open window (trade partner, quest...)
     local lastMoney
 
     -- a money change in the next few seconds belongs to this
-    local function Expect(cat) oneShot, oneShotUntil = cat, GetTime() + 3 end
+    local function Expect(cat, detail)
+        expectCat, expectDetail, expectUntil = cat, detail, GetTime() + 3
+    end
+
+    local ORDER = { "trade", "loot", "quest", "ah", "merchant", "train", "taxi", "guild", "mail" }
+    local SOURCE = { trade = "Trade", loot = "Loot", quest = "Quest", ah = "Auction house",
+        merchant = "Vendor", train = "Training", taxi = "Flight", guild = "Guild bank", mail = "Mail",
+        repair = "Repair", other = "Other" }
 
     local function Context()
-        if oneShot and GetTime() < oneShotUntil then return oneShot end
-        if open.trade then return "trade" end
-        if open.loot then return "loot" end
-        if open.quest then return "quest" end
-        if open.ah then return "ah" end
-        if open.merchant then return "vendor" end
-        if open.train then return "train" end
-        if open.taxi then return "taxi" end
-        if open.guild then return "guild" end
-        if open.mail then return "mail" end
-        return "other"
+        if expectCat and GetTime() < expectUntil then return expectCat, expectDetail end
+        for _, w in ipairs(ORDER) do
+            if open[w] then return w, windowDetail[w] end
+        end
+        return "other", nil
     end
 
     local function Record(delta)
+        DB.ledger = DB.ledger or {}
+        local cat, detail = Context()
         local c = Me()
-        c.ledger = c.ledger or {}
-        local day = date("%Y-%m-%d")
-        local d = c.ledger[day] or {}
-        c.ledger[day] = d
-        local cat = Context()
-        local e = d[cat] or { 0, 0 }           -- { earned, spent }
-        d[cat] = e
-        if delta > 0 then e[1] = e[1] + delta else e[2] = e[2] - delta end
-        if OpenLedger and LedgerRefresh then LedgerRefresh() end
+        table.insert(DB.ledger, { time(), me, SOURCE[cat] or cat, detail or "", delta, c.class })
+        while #DB.ledger > MAX_ROWS do table.remove(DB.ledger, 1) end
+        if LedgerRefresh then LedgerRefresh() end
     end
+
+    local function Name(link) return link and (link:match("%[(.-)%]") or link) end
 
     local ev = CreateFrame("Frame")
     local WINDOWS = {
@@ -1870,17 +1865,17 @@ do
         LOOT_OPENED = { "loot", true }, LOOT_CLOSED = { "loot", false },
         QUEST_COMPLETE = { "quest", true }, QUEST_FINISHED = { "quest", false },
     }
-    -- the modern client reports most NPC windows through one event
     local INTERACTION = {}
     if Enum and Enum.PlayerInteractionType then
         local T = Enum.PlayerInteractionType
-        for name, cat in pairs({ Merchant = "merchant", Trainer = "train", TaxiNode = "taxi",
+        for name, w in pairs({ Merchant = "merchant", Trainer = "train", TaxiNode = "taxi",
             MailInfo = "mail", GuildBanker = "guild", Auctioneer = "ah" }) do
-            if T[name] then INTERACTION[T[name]] = cat end
+            if T[name] then INTERACTION[T[name]] = w end
         end
     end
-    -- money that lands just after a window closes
     local AFTER = { TRADE_CLOSED = "trade", LOOT_CLOSED = "loot", QUEST_FINISHED = "quest" }
+
+    local function NPCName() return UnitName("npc") or UnitName("target") end
 
     ev:SetScript("OnEvent", function(_, e, arg)
         if e == "PLAYER_ENTERING_WORLD" then
@@ -1890,16 +1885,25 @@ do
             if lastMoney and DB and me and now ~= lastMoney then Record(now - lastMoney) end
             lastMoney = now
         elseif e == "PLAYER_INTERACTION_MANAGER_FRAME_SHOW" then
-            if INTERACTION[arg] then open[INTERACTION[arg]] = true end
+            local w = INTERACTION[arg]
+            if w then open[w] = true; windowDetail[w] = (w == "merchant" or w == "train") and NPCName() or nil end
         elseif e == "PLAYER_INTERACTION_MANAGER_FRAME_HIDE" then
             if INTERACTION[arg] then open[INTERACTION[arg]] = false end
         elseif e == "QUEST_TURNED_IN" then
-            Expect("quest")
+            local title = C_QuestLog and C_QuestLog.GetTitleForQuestID and C_QuestLog.GetTitleForQuestID(arg)
+            Expect("quest", title or windowDetail.quest)
         elseif e == "CHAT_MSG_MONEY" then
-            Expect("loot")
+            Expect("loot", windowDetail.loot)
         elseif WINDOWS[e] then
-            open[WINDOWS[e][1]] = WINDOWS[e][2]
-            if AFTER[e] then Expect(AFTER[e]) end
+            local w, isOpen = WINDOWS[e][1], WINDOWS[e][2]
+            if isOpen then
+                if w == "trade" then windowDetail.trade = "with " .. (UnitName("NPC") or "?")
+                elseif w == "quest" then windowDetail.quest = GetTitleText and GetTitleText()
+                elseif w == "loot" then windowDetail.loot = UnitExists("target") and UnitIsDead("target") and UnitName("target") or nil
+                elseif w == "merchant" or w == "train" then windowDetail[w] = NPCName() end
+            end
+            open[w] = isOpen
+            if AFTER[e] then Expect(AFTER[e], windowDetail[AFTER[e]]) end
         end
     end)
     for e in pairs(WINDOWS) do pcall(ev.RegisterEvent, ev, e) end
@@ -1908,168 +1912,157 @@ do
         pcall(ev.RegisterEvent, ev, e)
     end
 
-    -- things that cost or pay money without a window of their own
-    local function Hook(name, fn) if _G[name] then hooksecurefunc(name, fn) end end
-    Hook("RepairAllItems", function() Expect("repair") end)
-    local function RepairClick() if InRepairMode and InRepairMode() then Expect("repair") end end
-    Hook("PickupInventoryItem", RepairClick)
-    if C_Container and C_Container.PickupContainerItem then
-        hooksecurefunc(C_Container, "PickupContainerItem", RepairClick)
+    -- what exactly the money was for
+    local function Hook(tbl, name, fn)
+        if tbl and tbl[name] then hooksecurefunc(tbl, name, fn) end
     end
-    Hook("TakeTaxiNode", function() Expect("taxi") end)
-    -- mail: auction house mail (sales, refunds) vs mail from players
-    local function MailMoney(index)
-        local kind = GetInboxInvoiceInfo and GetInboxInvoiceInfo(index)
-        Expect(kind and "ah" or "mail")
+    local function Count(n) return (n and n > 1) and (" x" .. n) or "" end
+    Hook(_G, "RepairAllItems", function(guild) Expect("repair", guild and "all (guild bank)" or "all items") end)
+    local function RepairOne()
+        if InRepairMode and InRepairMode() then Expect("repair", "one item") end
     end
-    Hook("TakeInboxMoney", MailMoney)
-    Hook("AutoLootMailItem", MailMoney)
+    Hook(_G, "PickupInventoryItem", RepairOne)
+    -- selling: right-clicking an item at a vendor
+    local function Sold(bag, slot)
+        if not open.merchant or not C_Container then return end
+        local info = C_Container.GetContainerItemInfo(bag, slot)
+        if info and info.hyperlink then
+            Expect("merchant", "sold " .. Name(info.hyperlink) .. Count(info.stackCount))
+        end
+    end
+    Hook(C_Container, "UseContainerItem", Sold)
+    Hook(C_Container, "PickupContainerItem", function(bag, slot)
+        RepairOne()
+        if open.merchant and not (InRepairMode and InRepairMode()) then Sold(bag, slot) end
+    end)
+    Hook(_G, "BuyMerchantItem", function(i, n)
+        Expect("merchant", "bought " .. (Name(GetMerchantItemLink and GetMerchantItemLink(i)) or "item") .. Count(n))
+    end)
+    Hook(_G, "BuybackItem", function(i)
+        Expect("merchant", "bought back " .. (Name(GetBuybackItemLink and GetBuybackItemLink(i)) or "item"))
+    end)
+    Hook(_G, "BuyTrainerService", function(i)
+        local name = GetTrainerServiceInfo and GetTrainerServiceInfo(i)
+        Expect("train", name)
+    end)
+    Hook(_G, "TakeTaxiNode", function(i) Expect("taxi", "to " .. (TaxiNodeName and TaxiNodeName(i) or "?")) end)
+    -- mail: auction house sales and refunds, or money from a player
+    local function MailMoney(i)
+        local kind, itemName, player = nil, nil, nil
+        if GetInboxInvoiceInfo then kind, itemName, player = GetInboxInvoiceInfo(i) end
+        if kind then
+            local what = kind == "seller" and "sold " or kind == "buyer" and "bought " or (kind .. " ")
+            Expect("ah", what .. (itemName or "?") .. (player and player ~= "" and (" (" .. player .. ")") or ""))
+        else
+            local _, _, sender, subject = GetInboxHeaderInfo(i)
+            Expect("mail", (sender or "?") .. (subject and subject ~= "" and (": " .. subject) or ""))
+        end
+    end
+    Hook(_G, "TakeInboxMoney", MailMoney)
+    Hook(_G, "AutoLootMailItem", MailMoney)
+    Hook(_G, "SendMail", function(to) Expect("mail", "postage to " .. (to or "?")) end)
+    -- auction house: buying and posting
+    if C_AuctionHouse then
+        Hook(C_AuctionHouse, "ConfirmCommoditiesPurchase", function(id, n)
+            Expect("ah", "bought " .. (C_Item.GetItemNameByID(id) or "item") .. Count(n))
+        end)
+        Hook(C_AuctionHouse, "PlaceBid", function() Expect("ah", "bought / bid") end)
+        Hook(C_AuctionHouse, "PostCommodity", function(loc, _, n)
+            local link = loc and C_Item.GetItemLink and C_Item.GetItemLink(loc)
+            Expect("ah", "deposit " .. (Name(link) or "item") .. Count(n))
+        end)
+        Hook(C_AuctionHouse, "PostItem", function(loc)
+            local link = loc and C_Item.GetItemLink and C_Item.GetItemLink(loc)
+            Expect("ah", "deposit " .. (Name(link) or "item"))
+        end)
+    end
 
     -----------------------------------------------------------------------
-    -- The window
+    -- The window: a sortable table
     -----------------------------------------------------------------------
-    local win, rows, lines
-    local who = nil                    -- character key, or nil for all characters
-    local picked = "all"               -- "all" or a day "YYYY-MM-DD"
-    local ROW_H, LIST_W = 18, 190
+    local win
+    local who = nil                     -- character key, or nil for everyone
+    local sortCol, sortDesc = 1, true
+    local offset = 0
+    local ROW_H, VISIBLE = 16, 22
+    local COLS = {                       -- title, width, field, align
+        { "Date", 120, 1, "LEFT" }, { "Character", 110, 2, "LEFT" }, { "Source", 95, 3, "LEFT" },
+        { "Details", 250, 4, "LEFT" }, { "Amount", 105, 5, "RIGHT" },
+    }
 
-    local function Chars()
-        if who then return { DB.chars[who] } end
+    local function Filtered()
         local list = {}
-        for _, k in ipairs(SortedChars()) do list[#list + 1] = DB.chars[k] end
+        for _, r in ipairs(DB.ledger or {}) do
+            if not who or r[2] == who then list[#list + 1] = r end
+        end
+        local f = COLS[sortCol][3]
+        table.sort(list, function(a, b)
+            local x, y = a[f], b[f]
+            if x == y then x, y = a[1], b[1] end
+            if sortDesc then return x > y else return x < y end
+        end)
         return list
     end
 
-    -- { earned, spent } per category, for one day or all of them
-    local function Totals(day)
-        local t = {}
-        for _, c in ipairs(Chars()) do
-            for d, cats in pairs(c.ledger or {}) do
-                if day == "all" or d == day then
-                    for cat, e in pairs(cats) do
-                        local x = t[cat] or { 0, 0 }
-                        t[cat] = x
-                        x[1], x[2] = x[1] + e[1], x[2] + e[2]
-                    end
-                end
-            end
-        end
-        return t
+    local function CharText(r)
+        local c = DB.chars[r[2]]
+        if c then return ColoredName(c) end
+        return (r[2] or "?"):match("^(.-)%-") or r[2]
     end
 
-    local function Days()
-        local seen, list = {}, {}
-        for _, c in ipairs(Chars()) do
-            for d in pairs(c.ledger or {}) do
-                if not seen[d] then seen[d] = true; list[#list + 1] = d end
-            end
-        end
-        table.sort(list, function(a, b) return a > b end)
-        return list
-    end
-
-    local function Money(c, sign)
-        if c == 0 then return "|cff8080800|r" end
-        return (sign or "") .. Coin(c)
-    end
-
-    local function Net(t)
-        local n = 0
-        for _, e in pairs(t) do n = n + e[1] - e[2] end
-        return n
-    end
-
-    local function NetText(n)
-        if n > 0 then return "|cff33ff33+|r" .. Coin(n) end
-        if n < 0 then return "|cffff4444-|r" .. Coin(-n) end
-        return "|cff8080800|r"
-    end
-
-    local function DayLabel(d)
-        if d == "all" then return "All time" end
-        if d == date("%Y-%m-%d") then return "Today" end
-        if d == date("%Y-%m-%d", time() - 86400) then return "Yesterday" end
-        local y, m, dd = d:match("(%d+)-(%d+)-(%d+)")
-        local t = time({ year = tonumber(y), month = tonumber(m), day = tonumber(dd), hour = 12 })
-        return date("%a %b %d", t)
+    local function AmountText(n)
+        if n >= 0 then return "|cff33ff33+|r" .. Coin(n) end
+        return "|cffff4444-|r" .. Coin(-n)
     end
 
     function LedgerRefresh()
         if not (win and win:IsShown()) then return end
         win.who:SetText(who and ColoredName(DB.chars[who]) or "All characters")
-        -- the day list
-        local days = Days()
-        table.insert(days, 1, "all")
-        for i, d in ipairs(days) do
-            local r = rows[i]
-            if not r then
-                r = CreateFrame("Button", nil, win.list)
-                r:SetSize(LIST_W - 4, ROW_H)
-                r:SetPoint("TOPLEFT", 2, -(i - 1) * ROW_H)
-                r.hl = r:CreateTexture(nil, "BACKGROUND")
-                r.hl:SetAllPoints()
-                r.day = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-                r.day:SetPoint("LEFT", 4, 0)
-                r.net = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-                r.net:SetPoint("RIGHT", -4, 0)
-                r:SetScript("OnClick", function(self) picked = self.key; LedgerRefresh() end)
-                rows[i] = r
+        local list = Filtered()
+        offset = math.max(0, math.min(offset, #list - VISIBLE))
+        for i, row in ipairs(win.rows) do
+            local r = list[offset + i]
+            if r then
+                row.cells[1]:SetText(date("%m/%d %H:%M", r[1]))
+                row.cells[2]:SetText(CharText(r))
+                row.cells[3]:SetText(r[3])
+                row.cells[4]:SetText(r[4])
+                row.cells[5]:SetText(AmountText(r[5]))
+                row:Show()
+            else
+                row:Hide()
             end
-            r.key = d
-            r.day:SetText(DayLabel(d))
-            r.net:SetText(NetText(Net(Totals(d))))
-            r.hl:SetColorTexture(1, 1, 1, d == picked and 0.15 or 0)
-            r:Show()
         end
-        for i = #days + 1, #rows do rows[i]:Hide() end
-        win.list:SetHeight(math.max(1, #days * ROW_H))
-        -- the breakdown
-        local t = Totals(picked)
-        for _, l in ipairs(lines) do l:Hide() end
-        local n = 0
-        local function Line(left, right, r, g, b)
-            n = n + 1
-            local l = lines[n]
-            if not l then
-                l = CreateFrame("Frame", nil, win.detail)
-                l:SetSize(260, 16)
-                l:SetPoint("TOPLEFT", 0, -(n - 1) * 16)
-                l.left = l:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-                l.left:SetPoint("LEFT")
-                l.right = l:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-                l.right:SetPoint("RIGHT")
-                lines[n] = l
-            end
-            l.left:SetText(left or "")
-            l.left:SetTextColor(r or 1, g or 1, b or 1)
-            l.right:SetText(right or "")
-            l:Show()
-        end
-        Line(DayLabel(picked), nil, 1, 0.82, 0)
-        Line()
         local earned, spent = 0, 0
-        Line("Earned", nil, 0.4, 1, 0.4)
-        for _, c in ipairs(CATS) do
-            local e = t[c[1]]
-            if e and e[1] > 0 then Line("   " .. c[2], Coin(e[1])); earned = earned + e[1] end
+        for _, r in ipairs(list) do
+            if r[5] > 0 then earned = earned + r[5] else spent = spent - r[5] end
         end
-        if earned == 0 then Line("   nothing", nil, 0.5, 0.5, 0.5) end
-        Line()
-        Line("Spent", nil, 1, 0.45, 0.45)
-        for _, c in ipairs(CATS) do
-            local e = t[c[1]]
-            if e and e[2] > 0 then Line("   " .. c[2], Coin(e[2])); spent = spent + e[2] end
+        local net = earned - spent
+        win.foot:SetText(string.format("%d transactions   Earned %s   Spent %s   Net %s",
+            #list, Coin(earned), Coin(spent), (net >= 0 and "|cff33ff33+|r" or "|cffff4444-|r") .. Coin(math.abs(net))))
+        win.pos:SetText(#list > VISIBLE and string.format("%d-%d of %d", offset + 1,
+            math.min(offset + VISIBLE, #list), #list) or "")
+        for i, h in ipairs(win.heads) do
+            h.text:SetText(COLS[i][1] .. (i == sortCol and (sortDesc and " v" or " ^") or ""))
         end
-        if spent == 0 then Line("   nothing", nil, 0.5, 0.5, 0.5) end
-        Line()
-        Line("Total earned", Money(earned))
-        Line("Total spent", Money(spent))
-        Line("Net", NetText(earned - spent), 1, 0.82, 0)
+    end
+
+    local function CSV()
+        local out = { "Date,Character,Source,Details,Amount (copper)" }
+        local function q(v)
+            local text = tostring(v):gsub('"', '""')
+            return '"' .. text .. '"'
+        end
+        for _, r in ipairs(Filtered()) do
+            out[#out + 1] = table.concat({ q(date("%Y-%m-%d %H:%M:%S", r[1])), q(r[2]), q(r[3]), q(r[4]), r[5] }, ",")
+        end
+        return table.concat(out, "\n")
     end
 
     local function Build()
+        local W = 20 + 680 + 20
         win = CreateFrame("Frame", "ForeverItemTrackerLedger", UIParent, "BasicFrameTemplateWithInset")
-        win:SetSize(500, 420)
+        win:SetSize(W, 30 + 40 + 20 + VISIBLE * ROW_H + 50)
         win:SetPoint("CENTER")
         win:SetFrameStrata("DIALOG")
         win:SetMovable(true)
@@ -2078,58 +2071,112 @@ do
         win:SetScript("OnDragStart", win.StartMoving)
         win:SetScript("OnDragStop", win.StopMovingOrSizing)
         win:SetClampedToScreen(true)
-        tinsert(UISpecialFrames, "ForeverItemTrackerLedger")       -- Escape closes it
+        tinsert(UISpecialFrames, "ForeverItemTrackerLedger")
         local title = win.TitleText or win:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         if not win.TitleText then title:SetPoint("TOP", 0, -5) end
         title:SetText("Ledger")
 
-        -- character picker: < name >
+        -- character filter
         local prev = CreateFrame("Button", nil, win, "UIPanelButtonTemplate")
-        prev:SetSize(24, 22)
-        prev:SetPoint("TOPLEFT", 14, -32)
-        prev:SetText("<")
-        local nxt = CreateFrame("Button", nil, win, "UIPanelButtonTemplate")
-        nxt:SetSize(24, 22)
-        nxt:SetPoint("TOPRIGHT", -14, -32)
-        nxt:SetText(">")
+        prev:SetSize(24, 22); prev:SetPoint("TOPLEFT", 14, -32); prev:SetText("<")
         win.who = win:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        win.who:SetPoint("TOP", 0, -36)
+        win.who:SetPoint("LEFT", prev, "RIGHT", 8, 0)
+        win.who:SetWidth(180); win.who:SetJustifyH("LEFT")
+        local nxt = CreateFrame("Button", nil, win, "UIPanelButtonTemplate")
+        nxt:SetSize(24, 22); nxt:SetPoint("LEFT", win.who, "RIGHT", 4, 0); nxt:SetText(">")
         local function Step(dir)
             local list = SortedChars()
-            local pos = 0                          -- 0 = all characters
+            local pos = 0
             for i, k in ipairs(list) do if k == who then pos = i end end
             pos = (pos + dir) % (#list + 1)
             who = pos > 0 and list[pos] or nil
-            picked = "all"
+            offset = 0
             LedgerRefresh()
         end
         prev:SetScript("OnClick", function() Step(-1) end)
         nxt:SetScript("OnClick", function() Step(1) end)
 
-        -- day list on the left
-        local scroll = CreateFrame("ScrollFrame", nil, win, "UIPanelScrollFrameTemplate")
-        scroll:SetPoint("TOPLEFT", 12, -64)
-        scroll:SetSize(LIST_W, 340)
-        win.list = CreateFrame("Frame", nil, scroll)
-        win.list:SetSize(LIST_W, 1)
-        scroll:SetScrollChild(win.list)
-        local sep = win:CreateTexture(nil, "ARTWORK")
-        sep:SetColorTexture(1, 1, 1, 0.12)
-        sep:SetSize(1, 340)
-        sep:SetPoint("TOPLEFT", scroll, "TOPRIGHT", 26, 0)
+        -- copy as CSV (for a real spreadsheet)
+        local export = CreateFrame("Button", nil, win, "UIPanelButtonTemplate")
+        export:SetSize(110, 22); export:SetPoint("TOPRIGHT", -14, -32); export:SetText("Copy as CSV")
+        local box = CreateFrame("Frame", nil, win, "BasicFrameTemplateWithInset")
+        box:SetAllPoints(); box:SetFrameLevel(win:GetFrameLevel() + 20); box:Hide()
+        local bs = CreateFrame("ScrollFrame", nil, box, "UIPanelScrollFrameTemplate")
+        bs:SetPoint("TOPLEFT", 14, -50); bs:SetPoint("BOTTOMRIGHT", -34, 14)
+        local eb = CreateFrame("EditBox", nil, bs)
+        eb:SetMultiLine(true); eb:SetFontObject(ChatFontSmall or GameFontHighlightSmall)
+        eb:SetWidth(W - 60); eb:SetAutoFocus(false)
+        eb:SetScript("OnEscapePressed", function() box:Hide() end)
+        bs:SetScrollChild(eb)
+        local hint = box:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        hint:SetPoint("TOPLEFT", 14, -30)
+        hint:SetText("Press Ctrl+C to copy, then paste into a spreadsheet. Escape to go back.")
+        export:SetScript("OnClick", function()
+            box:Show(); eb:SetText(CSV()); eb:SetFocus(); eb:HighlightText()
+        end)
 
-        -- breakdown on the right
-        win.detail = CreateFrame("Frame", nil, win)
-        win.detail:SetPoint("TOPLEFT", sep, "TOPRIGHT", 12, 0)
-        win.detail:SetSize(260, 340)
+        -- column headers (click to sort)
+        win.heads = {}
+        local x = 20
+        for i, c in ipairs(COLS) do
+            local h = CreateFrame("Button", nil, win)
+            h:SetSize(c[2], 18)
+            h:SetPoint("TOPLEFT", x, -64)
+            h.text = h:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            h.text:SetAllPoints(); h.text:SetJustifyH(c[4])
+            h:SetScript("OnClick", function()
+                if sortCol == i then sortDesc = not sortDesc else sortCol, sortDesc = i, (i == 1 or i == 5) end
+                offset = 0
+                LedgerRefresh()
+            end)
+            win.heads[i] = h
+            x = x + c[2]
+        end
+        local line = win:CreateTexture(nil, "ARTWORK")
+        line:SetColorTexture(1, 1, 1, 0.15)
+        line:SetPoint("TOPLEFT", 18, -83); line:SetSize(684, 1)
 
-        rows, lines = {}, {}
+        -- rows
+        win.rows = {}
+        for i = 1, VISIBLE do
+            local row = CreateFrame("Frame", nil, win)
+            row:SetSize(680, ROW_H)
+            row:SetPoint("TOPLEFT", 20, -86 - (i - 1) * ROW_H)
+            if i % 2 == 0 then
+                local bg = row:CreateTexture(nil, "BACKGROUND")
+                bg:SetAllPoints(); bg:SetColorTexture(1, 1, 1, 0.04)
+            end
+            row.cells = {}
+            local cx = 0
+            for j, c in ipairs(COLS) do
+                local fs = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                fs:SetPoint("LEFT", cx + 2, 0); fs:SetWidth(c[2] - 6); fs:SetJustifyH(c[4])
+                fs:SetWordWrap(false)
+                row.cells[j] = fs
+                cx = cx + c[2]
+            end
+            win.rows[i] = row
+        end
+        win:EnableMouseWheel(true)
+        win:SetScript("OnMouseWheel", function(_, d)
+            offset = offset - d * (IsShiftKeyDown() and VISIBLE or 3)
+            if offset < 0 then offset = 0 end
+            LedgerRefresh()
+        end)
+
+        win.pos = win:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        win.pos:SetPoint("BOTTOMRIGHT", -20, 30)
+        win.foot = win:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        win.foot:SetPoint("BOTTOMLEFT", 20, 12)
+        local tip = win:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        tip:SetPoint("BOTTOMLEFT", 20, 30)
+        tip:SetText("Scroll to move (Shift: a page). Click a column to sort.")
         win:SetScript("OnShow", LedgerRefresh)
     end
 
     OpenLedger = function()
         if not win then Build() end
-        if win:IsShown() then win:Hide() else who = me; picked = "all"; win:Show() end
+        if win:IsShown() then win:Hide() else offset = 0; win:Show() end
     end
 
     -----------------------------------------------------------------------
@@ -2173,17 +2220,18 @@ do
         b:SetScript("OnClick", function() OpenLedger() end)
         b:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-            GameTooltip:AddLine("Forever Item Tracker PLUS")
-            local t = 0
-            local d = Me().ledger and Me().ledger[date("%Y-%m-%d")]
-            for _, e in pairs(d or {}) do t = t + e[1] - e[2] end
-            GameTooltip:AddDoubleLine("Today", NetText(t), 1, 1, 1)
-            GameTooltip:AddLine("Click to open the ledger. Drag to move this button.", 0.6, 0.6, 0.6, true)
+            GameTooltip:AddLine("Ledger")
+            GameTooltip:AddLine("Click to open. Drag to move this button.", 0.6, 0.6, 0.6, true)
             GameTooltip:Show()
         end)
         b:SetScript("OnLeave", function() GameTooltip:Hide() end)
     end
-    ev:HookScript("OnEvent", function(_, e) if e == "PLAYER_ENTERING_WORLD" and DB then MinimapButton() end end)
+    ev:HookScript("OnEvent", function(_, e)
+        if e == "PLAYER_ENTERING_WORLD" and DB then
+            MinimapButton()
+            for _, c in pairs(DB.chars) do c.ledger = nil end   -- the old daily totals
+        end
+    end)
 end
 
 SLASH_FITP1 = "/fitp"
