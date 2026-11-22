@@ -2339,7 +2339,7 @@ do
             -- earlier versions filed sales made right after a repair as Repair
             if DB.ledger and not DB.ledgerRepairFix then
                 for _, r in ipairs(DB.ledger) do
-                    if (r[3] == "Repair" or r[3] == "Flight" or r[3] == "Training") and r[5] > 0 then
+                    if r[3] == "Repair" and r[5] > 0 then           -- repairs happen at vendors
                         r[3], r[4] = "Vendor", "sold item"
                     end
                 end
