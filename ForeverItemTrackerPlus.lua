@@ -1869,8 +1869,18 @@ do
         merchant = "Vendor", train = "Training", taxi = "Flight", guild = "Guild bank", mail = "Mail",
         repair = "Repair", other = "Other" }
 
-    local function Context()
-        if expectCat and GetTime() < expectUntil then return expectCat, expectDetail end
+    -- things that only ever cost money: a gain in the same moment (selling
+    -- right after repairing, say) isn't theirs
+    local SPEND_ONLY = { repair = true, taxi = true, train = true }
+    -- ...and repairs and flights are one payment each
+    local ONE_PAYMENT = { repair = true, taxi = true }
+
+    local function Context(delta)
+        if expectCat and GetTime() < expectUntil and not (SPEND_ONLY[expectCat] and delta > 0) then
+            local cat, detail = expectCat, expectDetail
+            if ONE_PAYMENT[cat] then expectCat = nil end
+            return cat, detail
+        end
         for _, w in ipairs(ORDER) do
             if open[w] then return w, windowDetail[w] end
         end
@@ -1901,7 +1911,7 @@ do
 
     local function Record(delta)
         DB.ledger = DB.ledger or {}
-        local cat, detail = Context()
+        local cat, detail = Context(delta)
         local c = Me()
         local source = SOURCE[cat] or cat
         if ROLLUP[source] then
@@ -2326,6 +2336,15 @@ do
             MinimapButton()
             for _, c in pairs(DB.chars) do c.ledger = nil end   -- the old daily totals
             -- fold rows recorded one by one before Loot / Other were added up
+            -- earlier versions filed sales made right after a repair as Repair
+            if DB.ledger and not DB.ledgerRepairFix then
+                for _, r in ipairs(DB.ledger) do
+                    if (r[3] == "Repair" or r[3] == "Flight" or r[3] == "Training") and r[5] > 0 then
+                        r[3], r[4] = "Vendor", "sold item"
+                    end
+                end
+                DB.ledgerRepairFix = true
+            end
             if DB.ledger and not DB.ledgerRolled2 then
                 local old = DB.ledger
                 DB.ledger = {}
