@@ -2271,7 +2271,7 @@ do
 
     OpenLedger = function()
         if not win then Build() end
-        if win:IsShown() then win:Hide() else offset = 0; win:Show() end
+        if win:IsShown() then win:Hide() else who = me; offset = 0; win:Show() end   -- opens on this character
     end
 
     -----------------------------------------------------------------------
