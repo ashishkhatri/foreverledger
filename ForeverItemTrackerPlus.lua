@@ -2041,7 +2041,17 @@ do
         Hook(C_AuctionHouse, "ConfirmCommoditiesPurchase", function(id, n)
             Expect("ah", "bought " .. (C_Item.GetItemNameByID(id) or "item") .. Count(n))
         end)
-        Hook(C_AuctionHouse, "PlaceBid", function() Expect("ah", "bought / bid") end)
+        -- gear and other one-off auctions: look the auction up for its item
+        Hook(C_AuctionHouse, "PlaceBid", function(auctionID, amount)
+            local info = C_AuctionHouse.GetAuctionInfoByID and C_AuctionHouse.GetAuctionInfoByID(auctionID)
+            local name = info and info.itemLink and Name(info.itemLink)
+            if not name and info and info.itemKey and C_Item.GetItemNameByID then
+                name = C_Item.GetItemNameByID(info.itemKey.itemID)
+            end
+            local bid = info and info.buyoutAmount and amount and amount < info.buyoutAmount
+            Expect("ah", (bid and "bid on " or "bought ") .. (name or "item")
+                .. ((info and info.quantity and info.quantity > 1) and (" x" .. info.quantity) or ""))
+        end)
         Hook(C_AuctionHouse, "PostCommodity", function(loc, _, n)
             local link = loc and C_Item.GetItemLink and C_Item.GetItemLink(loc)
             Expect("ah", "deposit " .. (Name(link) or "item") .. Count(n))
