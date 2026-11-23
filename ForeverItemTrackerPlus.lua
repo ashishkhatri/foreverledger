@@ -1883,34 +1883,39 @@ do
     end
     local function Same(a, b) return a[1] == b[1] and a[2] == b[2] and a[3] == b[3] end
 
-    local function Busy(slots)
-        if GetCursorInfo() then return true end
-        for _, s in ipairs(slots) do
-            local info = C_Container.GetContainerItemInfo(s[1], s[2])
-            if info and info.isLocked then return true end
-        end
-    end
-
+    -- Each tick: work out the whole sorted order, then make every swap whose
+    -- two slots aren't still busy from an earlier move, all at once.
     local function Step()
         if InCombatLockdown() then S.Stop("stopped: you entered combat"); return end
+        if GetCursorInfo() then return end
         local slots = Slots()
-        if Busy(slots) then return end
-        local keys = {}
-        for i, s in ipairs(slots) do keys[i] = Key(C_Container.GetContainerItemInfo(s[1], s[2])) end
+        local keys, locked = {}, {}
+        for i, s in ipairs(slots) do
+            local info = C_Container.GetContainerItemInfo(s[1], s[2])
+            keys[i] = Key(info)
+            locked[i] = info and info.isLocked
+        end
+        local touched, made, waiting = {}, 0, false
         for t = 1, #slots do
             local best = t
             for i = t + 1, #slots do
                 if Before(keys[i], keys[best]) then best = i end
             end
             if best ~= t and not Same(keys[best], keys[t]) then
-                C_Container.PickupContainerItem(slots[best][1], slots[best][2])
-                C_Container.PickupContainerItem(slots[t][1], slots[t][2])
-                S.moves = S.moves + 1
-                if S.moves > 500 then S.Stop("stopped after 500 moves") end
-                return
+                if locked[t] or locked[best] or touched[t] or touched[best] then
+                    waiting = true
+                else
+                    C_Container.PickupContainerItem(slots[best][1], slots[best][2])
+                    C_Container.PickupContainerItem(slots[t][1], slots[t][2])
+                    touched[t], touched[best] = true, true
+                    made = made + 1
+                end
+                keys[t], keys[best] = keys[best], keys[t]
             end
         end
-        S.Stop()
+        S.moves = S.moves + made
+        if S.moves > 1000 then S.Stop("stopped after 1000 moves"); return end
+        if made == 0 and not waiting then S.Stop() end
     end
 
     function S.Stop(why)
@@ -1923,7 +1928,7 @@ do
         if S.running then return end
         if InCombatLockdown() then Msg("can't sort bags in combat."); return end
         S.running, S.moves = true, 0
-        S.ticker = C_Timer.NewTicker(0.1, Step)
+        S.ticker = C_Timer.NewTicker(0.05, Step)
     end
 
     local function AddButton(frame)
