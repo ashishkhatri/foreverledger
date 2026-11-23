@@ -1842,6 +1842,131 @@ do
     end)
 end
 
+---------------------------------------------------------------------------
+-- Sort bags by value: a button on your bags puts the most valuable stacks
+-- first. A stack's value is its count times the higher of its AH price (last
+-- scan) and vendor price. Out of combat only; items are swapped one pair at
+-- a time, waiting for each move to finish.
+---------------------------------------------------------------------------
+do
+    local S = { running = false }
+
+    local function Slots()
+        local list = {}
+        for bag = 0, (NUM_BAG_SLOTS or 4) do
+            -- only ordinary bags (profession bags hold only their own kind)
+            local family = bag == 0 and 0 or select(2, C_Container.GetContainerNumFreeSlots(bag))
+            if family == 0 then
+                for slot = 1, C_Container.GetContainerNumSlots(bag) do list[#list + 1] = { bag, slot } end
+            end
+        end
+        return list
+    end
+
+    local function Value(info)
+        if not info then return -1 end
+        local p = DB.prices[priceKey]
+        local ah = p and p.items and p.items[info.itemID] or 0
+        local vendor = ItemInfo and select(11, ItemInfo(info.itemID)) or 0
+        return math.max(ah or 0, vendor or 0) * (info.stackCount or 1)
+    end
+
+    -- what should come first: higher value, then by item and bigger stacks
+    local function Key(info)
+        if not info then return { -1, 0, 0 } end
+        return { Value(info), info.itemID or 0, info.stackCount or 1 }
+    end
+    local function Before(a, b)
+        if a[1] ~= b[1] then return a[1] > b[1] end
+        if a[2] ~= b[2] then return a[2] < b[2] end
+        return a[3] > b[3]
+    end
+    local function Same(a, b) return a[1] == b[1] and a[2] == b[2] and a[3] == b[3] end
+
+    local function Busy(slots)
+        if GetCursorInfo() then return true end
+        for _, s in ipairs(slots) do
+            local info = C_Container.GetContainerItemInfo(s[1], s[2])
+            if info and info.isLocked then return true end
+        end
+    end
+
+    local function Step()
+        if InCombatLockdown() then S.Stop("stopped: you entered combat"); return end
+        local slots = Slots()
+        if Busy(slots) then return end
+        local keys = {}
+        for i, s in ipairs(slots) do keys[i] = Key(C_Container.GetContainerItemInfo(s[1], s[2])) end
+        for t = 1, #slots do
+            local best = t
+            for i = t + 1, #slots do
+                if Before(keys[i], keys[best]) then best = i end
+            end
+            if best ~= t and not Same(keys[best], keys[t]) then
+                C_Container.PickupContainerItem(slots[best][1], slots[best][2])
+                C_Container.PickupContainerItem(slots[t][1], slots[t][2])
+                S.moves = S.moves + 1
+                if S.moves > 500 then S.Stop("stopped after 500 moves") end
+                return
+            end
+        end
+        S.Stop()
+    end
+
+    function S.Stop(why)
+        if S.ticker then S.ticker:Cancel(); S.ticker = nil end
+        S.running = false
+        if why then Msg("bag sort %s.", why) end
+    end
+
+    function S.Start()
+        if S.running then return end
+        if InCombatLockdown() then Msg("can't sort bags in combat."); return end
+        S.running, S.moves = true, 0
+        S.ticker = C_Timer.NewTicker(0.1, Step)
+    end
+
+    local function AddButton(frame)
+        if not frame or frame.fitpSort then return end
+        local b = CreateFrame("Button", nil, frame)
+        frame.fitpSort = b
+        b:SetSize(22, 22)
+        -- beside the game's own Clean Up Bags button when it's there
+        local cleanup = BagItemAutoSortButton
+        if cleanup and cleanup:GetParent() == frame then
+            b:SetPoint("RIGHT", cleanup, "LEFT", -4, 0)
+        else
+            b:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -32, -32)
+        end
+        b:SetFrameLevel(frame:GetFrameLevel() + 10)
+        local icon = b:CreateTexture(nil, "ARTWORK")
+        icon:SetAllPoints()
+        icon:SetTexture("Interface\\Icons\\INV_Misc_Coin_01")
+        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        b:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+        b:SetScript("OnClick", S.Start)
+        b:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+            GameTooltip:AddLine("Sort by value")
+            GameTooltip:AddLine("Most valuable stacks first: count x the higher of AH and vendor price.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    end
+
+    local f = CreateFrame("Frame")
+    f:RegisterEvent("PLAYER_LOGIN")
+    f:SetScript("OnEvent", function()
+        for _, name in ipairs({ "ContainerFrameCombinedBags", "ContainerFrame1" }) do
+            local fr = _G[name]
+            if fr then
+                if fr:IsShown() then AddButton(fr) end
+                fr:HookScript("OnShow", function(self) AddButton(self) end)
+            end
+        end
+    end)
+end
+
 local LedgerRefresh
 ---------------------------------------------------------------------------
 -- Ledger: a list of every money transaction on every character, like a
