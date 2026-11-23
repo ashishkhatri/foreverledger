@@ -1938,7 +1938,7 @@ do
         -- the same size as the game's Clean Up button, styled like an action button
         local cleanup = BagItemAutoSortButton
         -- a touch smaller than Clean Up's button (its art has empty space round it)
-        local size = (cleanup and cleanup:GetParent() == frame and math.floor(cleanup:GetHeight() * 0.85 + 0.5)) or 22
+        local size = (cleanup and cleanup:GetParent() == frame and math.floor(cleanup:GetHeight() * 0.72 + 0.5)) or 20
         b:SetSize(size, size)
         if cleanup and cleanup:GetParent() == frame then
             b:SetPoint("RIGHT", cleanup, "LEFT", -3, 0)
