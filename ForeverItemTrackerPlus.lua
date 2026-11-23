@@ -2070,6 +2070,7 @@ do
         { "Spent", 115, nil, "RIGHT" }, { "Net", 120, nil, "RIGHT" },
     }
     local source = nil                   -- nil: the list of sources
+    local sumCol, sumDesc = nil, true    -- sources list sort (nil: busiest first)
 
     -- time ranges for the dropdown; each gives (from, to) in seconds
     local function Midnight(daysAgo)
@@ -2137,7 +2138,13 @@ do
                 e[2] = e[2] + (r[7] or 1)
                 if r[5] > 0 then e[3] = e[3] + r[5] else e[4] = e[4] - r[5] end
             end
-            table.sort(order, function(a, b) return a[3] + a[4] > b[3] + b[4] end)
+            for _, e in ipairs(order) do e[5] = e[3] - e[4] end
+            table.sort(order, function(a, b)
+                if not sumCol then return a[3] + a[4] > b[3] + b[4] end
+                local x, y = a[sumCol], b[sumCol]
+                if x == y then return a[1] < b[1] end
+                if sumDesc then return x > y else return x < y end
+            end)
             shown = order
         end
         offset = math.max(0, math.min(offset, #shown - VISIBLE))
@@ -2182,10 +2189,12 @@ do
         win.pos:SetText(#shown > VISIBLE and string.format("%d-%d of %d", offset + 1,
             math.min(offset + VISIBLE, #shown), #shown) or "")
         for i, h in ipairs(win.heads) do
-            h.text:SetText(cols[i][1] .. ((source and i == sortCol) and (sortDesc and " v" or " ^") or ""))
+            local active = (source and i == sortCol) or (not source and i == sumCol)
+            local desc = source and sortDesc or sumDesc
+            h.text:SetText(cols[i][1] .. (active and (desc and " v" or " ^") or ""))
         end
         win.tip:SetText(source and "Scroll to move (Shift: a page). Click a column to sort."
-            or "Click a source to see its transactions.")
+            or "Click a source to see its transactions. Click a column to sort.")
     end
 
     -- A money cell: gold, silver and copper each in their own right-aligned
@@ -2323,7 +2332,13 @@ do
             h.text = h:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
             h.text:SetAllPoints(); h.text:SetJustifyH(c[4])
             h:SetScript("OnClick", function()
-                if not source then return end
+                if not source then
+                    -- sources list: name A-Z first, numbers biggest first
+                    if sumCol == i then sumDesc = not sumDesc else sumCol, sumDesc = i, i ~= 1 end
+                    offset = 0
+                    LedgerRefresh()
+                    return
+                end
                 if sortCol == i then sortDesc = not sortDesc else sortCol, sortDesc = i, (i == 1 or i == 5) end
                 offset = 0
                 LedgerRefresh()
