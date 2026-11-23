@@ -1945,34 +1945,26 @@ do
             b:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -32, -32)
         end
         b:SetFrameLevel(frame:GetFrameLevel() + 10)
+        -- a plain icon with a thin dark edge, like the Clean Up button beside it
+        local edge = b:CreateTexture(nil, "BACKGROUND")
+        edge:SetAllPoints()
+        edge:SetColorTexture(0, 0, 0, 0.9)
         local icon = b:CreateTexture(nil, "ARTWORK")
         icon:SetPoint("TOPLEFT", 1, -1)
         icon:SetPoint("BOTTOMRIGHT", -1, 1)
         icon:SetTexture("Interface\\Icons\\INV_Misc_Coin_17")
-        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        local function Atlas(tex, name)
-            return tex.SetAtlas and pcall(tex.SetAtlas, tex, name) and tex:GetAtlas() == name
-        end
-        local mask = b:CreateMaskTexture()
-        if Atlas(mask, "UI-HUD-ActionBar-IconFrame-Mask") then
-            mask:SetAllPoints(icon)
-            icon:AddMaskTexture(mask)
-        end
-        local border = b:CreateTexture(nil, "OVERLAY")
-        border:SetPoint("TOPLEFT", -1, 1)
-        border:SetPoint("BOTTOMRIGHT", 1, -1)
-        if not Atlas(border, "UI-HUD-ActionBar-IconFrame") then
-            border:SetTexture("Interface\\Buttons\\UI-Quickslot2")
-            border:SetPoint("TOPLEFT", -size * 0.45, size * 0.45)
-            border:SetPoint("BOTTOMRIGHT", size * 0.45, -size * 0.45)
-        end
+        icon:SetTexCoord(0.1, 0.9, 0.1, 0.9)
+        -- the same hover glow the Clean Up button uses
         local hl = b:CreateTexture(nil, "HIGHLIGHT")
-        hl:SetAllPoints(border)
-        if not Atlas(hl, "UI-HUD-ActionBar-IconFrame-Mouseover") then
+        hl:SetAllPoints(icon)
+        local theirs = cleanup and cleanup.GetHighlightTexture and cleanup:GetHighlightTexture()
+        local atlas = theirs and theirs.GetAtlas and theirs:GetAtlas()
+        if atlas then
+            hl:SetAtlas(atlas)
+        else
             hl:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
-            hl:SetAllPoints(icon)
-            hl:SetBlendMode("ADD")
         end
+        hl:SetBlendMode("ADD")
         b:SetScript("OnMouseDown", function() icon:SetVertexColor(0.7, 0.7, 0.7) end)
         b:SetScript("OnMouseUp", function() icon:SetVertexColor(1, 1, 1) end)
         b:SetScript("OnClick", S.Start)
