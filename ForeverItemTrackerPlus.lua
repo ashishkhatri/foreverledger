@@ -2062,7 +2062,7 @@ do
     local ROW_H, VISIBLE = 16, 22
     local COLS = {                       -- title, width, field, align
         { "Date", 120, 1, "LEFT" }, { "Character", 110, 2, "LEFT" }, { "Source", 95, 3, "LEFT" },
-        { "Details", 250, 4, "LEFT" }, { "Amount", 105, 5, "RIGHT" },
+        { "Details", 230, 4, "LEFT" }, { "Amount", 125, 5, "RIGHT" },
     }
     -- the first view: one row per source; click one for its transactions
     local SUMMARY = {
@@ -2144,20 +2144,25 @@ do
         for i, row in ipairs(win.rows) do
             local r = shown[offset + i]
             row.key = nil
+            for j = 1, #row.money do row.money[j]:Hide(); row.cells[j]:Show() end
+            local function Money(j, amount, signed)
+                row.cells[j]:Hide()
+                row.money[j]:Set(amount, signed)
+            end
             if r and source then
                 row.cells[1]:SetText(date("%m/%d %H:%M", r[1]))
                 row.cells[2]:SetText(CharText(r))
                 row.cells[3]:SetText(r[3])
                 row.cells[4]:SetText(r[4])
-                row.cells[5]:SetText(AmountText(r[5]))
+                Money(5, r[5], true)
                 row:Show()
             elseif r then
                 row.key = r[1]
                 row.cells[1]:SetText(r[1])
                 row.cells[2]:SetText(r[2])
-                row.cells[3]:SetText(r[3] > 0 and Coin(r[3]) or "|cff808080-|r")
-                row.cells[4]:SetText(r[4] > 0 and Coin(r[4]) or "|cff808080-|r")
-                row.cells[5]:SetText(AmountText(r[3] - r[4]))
+                if r[3] > 0 then Money(3, r[3]) else row.cells[3]:SetText("|cff808080-|r") end
+                if r[4] > 0 then Money(4, r[4]) else row.cells[4]:SetText("|cff808080-|r") end
+                Money(5, r[3] - r[4], true)
                 row:Show()
             else
                 row:Hide()
@@ -2181,6 +2186,42 @@ do
         end
         win.tip:SetText(source and "Scroll to move (Shift: a page). Click a column to sort."
             or "Click a source to see its transactions.")
+    end
+
+    -- A money cell: gold, silver and copper each in their own right-aligned
+    -- slot, so amounts line up in columns down the table.
+    local ICON = {
+        g = "|TInterface\\MoneyFrame\\UI-GoldIcon:0:0:2:0|t",
+        s = "|TInterface\\MoneyFrame\\UI-SilverIcon:0:0:2:0|t",
+        c = "|TInterface\\MoneyFrame\\UI-CopperIcon:0:0:2:0|t",
+    }
+    local SLOT = 30                      -- width of the silver and copper slots
+    local function MoneyCell(parent)
+        local m = CreateFrame("Frame", nil, parent)
+        m:SetHeight(ROW_H)
+        local function fs()
+            local f = m:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            f:SetJustifyH("RIGHT"); f:SetWordWrap(false)
+            return f
+        end
+        m.c = fs(); m.c:SetPoint("RIGHT", 0, 0); m.c:SetWidth(SLOT)
+        m.s = fs(); m.s:SetPoint("RIGHT", m.c, "LEFT", 0, 0); m.s:SetWidth(SLOT)
+        m.g = fs(); m.g:SetPoint("RIGHT", m.s, "LEFT", 0, 0)
+        m.sign = fs(); m.sign:SetPoint("RIGHT", m.g, "LEFT", -2, 0); m.sign:SetWidth(10)
+        function m:Set(amount, signed)
+            local n = math.abs(amount)
+            local g, sv, c = math.floor(n / 10000), math.floor(n / 100) % 100, n % 100
+            self.g:SetText(g > 0 and (g .. ICON.g) or "")
+            self.s:SetText((g > 0 or sv > 0) and (sv .. ICON.s) or "")
+            self.c:SetText(c .. ICON.c)
+            if signed then
+                self.sign:SetText(amount >= 0 and "|cff33ff33+|r" or "|cffff4444-|r")
+            else
+                self.sign:SetText("")
+            end
+            self:Show()
+        end
+        return m
     end
 
     local function CSV()
@@ -2317,6 +2358,11 @@ do
                 row.cells[j] = fs
                 cx = cx + c[2]
             end
+            row.money = {}
+            for j = 1, #COLS do
+                row.money[j] = MoneyCell(row)
+                row.money[j]:Hide()
+            end
             win.rows[i] = row
         end
         -- place headers and cells for a set of columns
@@ -2334,6 +2380,9 @@ do
                     local fs = row.cells[j]
                     fs:ClearAllPoints(); fs:SetPoint("LEFT", cx + 2, 0)
                     fs:SetWidth(c[2] - 6); fs:SetJustifyH(c[4])
+                    local m = row.money[j]
+                    m:ClearAllPoints(); m:SetPoint("LEFT", cx, 0); m:SetWidth(c[2] - 4)
+                    m.g:SetWidth(math.max(20, c[2] - 4 - 2 * SLOT - 12))
                     cx = cx + c[2]
                 end
             end
