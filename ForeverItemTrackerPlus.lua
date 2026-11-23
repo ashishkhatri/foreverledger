@@ -1941,7 +1941,8 @@ do
         local size = (cleanup and cleanup:GetParent() == frame and math.floor(cleanup:GetHeight() * 0.72 + 0.5)) or 20
         b:SetSize(size, size)
         if cleanup and cleanup:GetParent() == frame then
-            b:SetPoint("RIGHT", cleanup, "LEFT", -3, 0)
+            -- Clean Up's picture sits a little below the middle of its button
+            b:SetPoint("RIGHT", cleanup, "LEFT", -5, -3)
         else
             b:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -32, -32)
         end
