@@ -2065,10 +2065,26 @@ do
         { "Details", 250, 4, "LEFT" }, { "Amount", 105, 5, "RIGHT" },
     }
 
+    -- time ranges for the dropdown; each gives (from, to) in seconds
+    local function Midnight(daysAgo)
+        local t = date("*t")
+        t.hour, t.min, t.sec = 0, 0, 0
+        return time(t) - (daysAgo or 0) * 86400
+    end
+    local RANGES = {
+        { "Today", function() return Midnight(0), math.huge end },
+        { "Yesterday", function() return Midnight(1), Midnight(0) end },
+        { "Last 7 days", function() return Midnight(6), math.huge end },
+        { "Last 30 days", function() return Midnight(29), math.huge end },
+        { "All time", function() return 0, math.huge end },
+    }
+    local range = 1
+
     local function Filtered()
         local list = {}
+        local from, to = RANGES[range][2]()
         for _, r in ipairs(DB.ledger or {}) do
-            if not who or r[2] == who then list[#list + 1] = r end
+            if (not who or r[2] == who) and r[1] >= from and r[1] < to then list[#list + 1] = r end
         end
         local f = COLS[sortCol][3]
         table.sort(list, function(a, b)
@@ -2093,6 +2109,8 @@ do
     function LedgerRefresh()
         if not (win and win:IsShown()) then return end
         win.who:SetText(who and ColoredName(DB.chars[who]) or "All characters")
+        if win.rangeButton then win.rangeButton:SetText(RANGES[range][1]) end
+        if win.range and win.range.GenerateMenu then win.range:GenerateMenu() end
         local list = Filtered()
         offset = math.max(0, math.min(offset, #list - VISIBLE))
         for i, row in ipairs(win.rows) do
@@ -2174,6 +2192,26 @@ do
         -- copy as CSV (for a real spreadsheet)
         local export = CreateFrame("Button", nil, win, "UIPanelButtonTemplate")
         export:SetSize(110, 22); export:SetPoint("TOPRIGHT", -14, -32); export:SetText("Copy as CSV")
+
+        -- time range: the game's dropdown where there is one, else a button that cycles
+        local function SetRange(i) range = i; offset = 0; LedgerRefresh() end
+        local ok, dd = pcall(CreateFrame, "DropdownButton", nil, win, "WowStyle1DropdownTemplate")
+        if ok and dd and dd.SetupMenu then
+            dd:SetWidth(130)
+            dd:SetPoint("RIGHT", export, "LEFT", -10, 0)
+            dd:SetupMenu(function(_, root)
+                for i, r in ipairs(RANGES) do
+                    root:CreateRadio(r[1], function() return range == i end, function() SetRange(i) end)
+                end
+            end)
+            win.range = dd
+        else
+            local b = CreateFrame("Button", nil, win, "UIPanelButtonTemplate")
+            b:SetSize(130, 22)
+            b:SetPoint("RIGHT", export, "LEFT", -10, 0)
+            b:SetScript("OnClick", function() SetRange(range % #RANGES + 1) end)
+            win.rangeButton = b
+        end
         local box = CreateFrame("Frame", nil, win, "BasicFrameTemplateWithInset")
         box:SetAllPoints(); box:SetFrameLevel(win:GetFrameLevel() + 20); box:Hide()
         local bs = CreateFrame("ScrollFrame", nil, box, "UIPanelScrollFrameTemplate")
@@ -2265,7 +2303,8 @@ do
                 if #list == 0 then GameTooltip:AddLine("   nothing", 0.5, 0.5, 0.5) end
             end
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
-            GameTooltip:AddLine(who and ColoredName(DB.chars[who]) or "All characters")
+            GameTooltip:AddDoubleLine(who and ColoredName(DB.chars[who]) or "All characters", RANGES[range][1],
+                1, 1, 1, 0.7, 0.7, 0.7)
             Section("Earned", earned, ein, 0.4, 1, 0.4)
             GameTooltip:AddLine(" ")
             Section("Spent", spent, eout, 1, 0.45, 0.45)
@@ -2281,7 +2320,8 @@ do
 
     OpenLedger = function()
         if not win then Build() end
-        if win:IsShown() then win:Hide() else who = me; offset = 0; win:Show() end   -- opens on this character
+        -- opens on this character, today
+        if win:IsShown() then win:Hide() else who = me; range = 1; offset = 0; win:Show() end
     end
 
     -----------------------------------------------------------------------
