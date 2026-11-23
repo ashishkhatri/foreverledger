@@ -1938,7 +1938,7 @@ do
         -- the same size as the game's Clean Up button, styled like an action button
         local cleanup = BagItemAutoSortButton
         -- a touch smaller than Clean Up's button (its art has empty space round it)
-        local size = (cleanup and cleanup:GetParent() == frame and math.floor(cleanup:GetHeight() * 0.8 + 0.5)) or 20
+        local size = (cleanup and cleanup:GetParent() == frame and math.floor(cleanup:GetHeight() * 0.85 + 0.5)) or 22
         b:SetSize(size, size)
         if cleanup and cleanup:GetParent() == frame then
             b:SetPoint("RIGHT", cleanup, "LEFT", -3, 0)
@@ -1956,13 +1956,6 @@ do
         icon:SetTexture("Interface\\Icons\\INV_Misc_Coin_17")
         icon:SetTexCoord(0.1, 0.9, 0.1, 0.9)
         icon:SetVertexColor(0.85, 0.85, 0.85)
-        -- rounded corners, like the bag slots
-        local mask = b:CreateMaskTexture()
-        if pcall(mask.SetAtlas, mask, "UI-HUD-ActionBar-IconFrame-Mask") and mask:GetAtlas() then
-            mask:SetAllPoints(b)
-            icon:AddMaskTexture(mask)
-            edge:AddMaskTexture(mask)
-        end
         -- the same hover glow the Clean Up button uses
         local hl = b:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAllPoints(icon)
