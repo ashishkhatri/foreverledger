@@ -1980,7 +1980,7 @@ do
         b:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_LEFT")
             GameTooltip:AddLine("Sort by value")
-            GameTooltip:AddLine("Most valuable stacks first: count x the higher of AH and vendor price.", 1, 1, 1, true)
+            GameTooltip:AddLine("Most valuable stacks first.", 1, 1, 1)
             GameTooltip:Show()
         end)
         b:SetScript("OnLeave", function() GameTooltip:Hide() end)
