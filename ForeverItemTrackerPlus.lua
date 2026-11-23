@@ -1935,20 +1935,46 @@ do
         if not frame or frame.fitpSort then return end
         local b = CreateFrame("Button", nil, frame)
         frame.fitpSort = b
-        b:SetSize(22, 22)
-        -- beside the game's own Clean Up Bags button when it's there
+        -- the same size as the game's Clean Up button, styled like an action button
         local cleanup = BagItemAutoSortButton
+        local size = (cleanup and cleanup:GetParent() == frame and math.floor(cleanup:GetHeight() + 0.5)) or 24
+        b:SetSize(size, size)
         if cleanup and cleanup:GetParent() == frame then
-            b:SetPoint("RIGHT", cleanup, "LEFT", -4, 0)
+            b:SetPoint("RIGHT", cleanup, "LEFT", -5, 0)
         else
             b:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -32, -32)
         end
         b:SetFrameLevel(frame:GetFrameLevel() + 10)
         local icon = b:CreateTexture(nil, "ARTWORK")
-        icon:SetAllPoints()
-        icon:SetTexture("Interface\\Icons\\INV_Misc_Coin_01")
+        icon:SetPoint("TOPLEFT", 1, -1)
+        icon:SetPoint("BOTTOMRIGHT", -1, 1)
+        icon:SetTexture("Interface\\Icons\\INV_Misc_Coin_17")
         icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        b:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+        local function Atlas(tex, name)
+            return tex.SetAtlas and pcall(tex.SetAtlas, tex, name) and tex:GetAtlas() == name
+        end
+        local mask = b:CreateMaskTexture()
+        if Atlas(mask, "UI-HUD-ActionBar-IconFrame-Mask") then
+            mask:SetAllPoints(icon)
+            icon:AddMaskTexture(mask)
+        end
+        local border = b:CreateTexture(nil, "OVERLAY")
+        border:SetPoint("TOPLEFT", -1, 1)
+        border:SetPoint("BOTTOMRIGHT", 1, -1)
+        if not Atlas(border, "UI-HUD-ActionBar-IconFrame") then
+            border:SetTexture("Interface\\Buttons\\UI-Quickslot2")
+            border:SetPoint("TOPLEFT", -size * 0.45, size * 0.45)
+            border:SetPoint("BOTTOMRIGHT", size * 0.45, -size * 0.45)
+        end
+        local hl = b:CreateTexture(nil, "HIGHLIGHT")
+        hl:SetAllPoints(border)
+        if not Atlas(hl, "UI-HUD-ActionBar-IconFrame-Mouseover") then
+            hl:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
+            hl:SetAllPoints(icon)
+            hl:SetBlendMode("ADD")
+        end
+        b:SetScript("OnMouseDown", function() icon:SetVertexColor(0.7, 0.7, 0.7) end)
+        b:SetScript("OnMouseUp", function() icon:SetVertexColor(1, 1, 1) end)
         b:SetScript("OnClick", S.Start)
         b:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_LEFT")
