@@ -2059,15 +2059,16 @@ do
     local who = nil                     -- character key, or nil for everyone
     local sortCol, sortDesc = 1, true
     local offset = 0
-    local ROW_H, VISIBLE = 16, 22
+    local ROW_H, VISIBLE = 19, 20
+    local TABLE_W = 780
     local COLS = {                       -- title, width, field, align
-        { "Date", 120, 1, "LEFT" }, { "Character", 110, 2, "LEFT" }, { "Source", 95, 3, "LEFT" },
-        { "Details", 230, 4, "LEFT" }, { "Amount", 125, 5, "RIGHT" },
+        { "Date", 130, 1, "LEFT" }, { "Character", 130, 2, "LEFT" }, { "Source", 110, 3, "LEFT" },
+        { "Details", 265, 4, "LEFT" }, { "Amount", 145, 5, "RIGHT" },
     }
     -- the first view: one row per source; click one for its transactions
     local SUMMARY = {
-        { "Source", 230, nil, "LEFT" }, { "Transactions", 100, nil, "RIGHT" }, { "Earned", 115, nil, "RIGHT" },
-        { "Spent", 115, nil, "RIGHT" }, { "Net", 120, nil, "RIGHT" },
+        { "Source", 250, nil, "LEFT" }, { "Transactions", 115, nil, "RIGHT" }, { "Earned", 135, nil, "RIGHT" },
+        { "Spent", 135, nil, "RIGHT" }, { "Net", 145, nil, "RIGHT" },
     }
     local source = nil                   -- nil: the list of sources
     local sumCol, sumDesc = nil, true    -- sources list sort (nil: busiest first)
@@ -2204,12 +2205,12 @@ do
         s = "|TInterface\\MoneyFrame\\UI-SilverIcon:0:0:2:0|t",
         c = "|TInterface\\MoneyFrame\\UI-CopperIcon:0:0:2:0|t",
     }
-    local SLOT = 30                      -- width of the silver and copper slots
+    local SLOT = 36                      -- width of the silver and copper slots
     local function MoneyCell(parent)
         local m = CreateFrame("Frame", nil, parent)
         m:SetHeight(ROW_H)
         local function fs()
-            local f = m:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            local f = m:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
             f:SetJustifyH("RIGHT"); f:SetWordWrap(false)
             return f
         end
@@ -2246,7 +2247,7 @@ do
     end
 
     local function Build()
-        local W = 20 + 680 + 20
+        local W = 20 + TABLE_W + 20
         win = CreateFrame("Frame", "ForeverItemTrackerLedger", UIParent, "BasicFrameTemplateWithInset")
         win:SetSize(W, 30 + 40 + 20 + VISIBLE * ROW_H + 50)
         win:SetPoint("CENTER")
@@ -2311,7 +2312,7 @@ do
         local bs = CreateFrame("ScrollFrame", nil, box, "UIPanelScrollFrameTemplate")
         bs:SetPoint("TOPLEFT", 14, -50); bs:SetPoint("BOTTOMRIGHT", -34, 14)
         local eb = CreateFrame("EditBox", nil, bs)
-        eb:SetMultiLine(true); eb:SetFontObject(ChatFontSmall or GameFontHighlightSmall)
+        eb:SetMultiLine(true); eb:SetFontObject(ChatFontNormal or GameFontHighlight)
         eb:SetWidth(W - 60); eb:SetAutoFocus(false)
         eb:SetScript("OnEscapePressed", function() box:Hide() end)
         bs:SetScrollChild(eb)
@@ -2329,7 +2330,7 @@ do
             local h = CreateFrame("Button", nil, win)
             h:SetSize(c[2], 18)
             h:SetPoint("TOPLEFT", x, -64)
-            h.text = h:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            h.text = h:CreateFontString(nil, "OVERLAY", "GameFontNormal")
             h.text:SetAllPoints(); h.text:SetJustifyH(c[4])
             h:SetScript("OnClick", function()
                 if not source then
@@ -2348,13 +2349,13 @@ do
         end
         local line = win:CreateTexture(nil, "ARTWORK")
         line:SetColorTexture(1, 1, 1, 0.15)
-        line:SetPoint("TOPLEFT", 18, -83); line:SetSize(684, 1)
+        line:SetPoint("TOPLEFT", 18, -83); line:SetSize(TABLE_W + 4, 1)
 
         -- rows
         win.rows = {}
         for i = 1, VISIBLE do
             local row = CreateFrame("Button", nil, win)
-            row:SetSize(680, ROW_H)
+            row:SetSize(TABLE_W, ROW_H)
             row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
             row:SetScript("OnClick", function(self)
                 if self.key then source = self.key; offset = 0; LedgerRefresh() end
@@ -2367,7 +2368,7 @@ do
             row.cells = {}
             local cx = 0
             for j, c in ipairs(COLS) do
-                local fs = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                local fs = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
                 fs:SetPoint("LEFT", cx + 2, 0); fs:SetWidth(c[2] - 6); fs:SetJustifyH(c[4])
                 fs:SetWordWrap(false)
                 row.cells[j] = fs
@@ -2417,9 +2418,9 @@ do
             LedgerRefresh()
         end)
 
-        win.pos = win:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        win.pos = win:CreateFontString(nil, "OVERLAY", "GameFontDisable")
         win.pos:SetPoint("BOTTOMRIGHT", -20, 30)
-        win.foot = win:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        win.foot = win:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         win.foot:SetPoint("BOTTOMLEFT", 20, 12)
         -- hover the totals: earned and spent by source
         local hover = CreateFrame("Frame", nil, win)
@@ -2451,7 +2452,7 @@ do
             GameTooltip:Show()
         end)
         hover:SetScript("OnLeave", function() GameTooltip:Hide() end)
-        local tip = win:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        local tip = win:CreateFontString(nil, "OVERLAY", "GameFontDisable")
         tip:SetPoint("BOTTOMLEFT", 20, 30)
         win.tip = tip
         tip:SetText("")
