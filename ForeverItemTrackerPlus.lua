@@ -2064,6 +2064,12 @@ do
         { "Date", 120, 1, "LEFT" }, { "Character", 110, 2, "LEFT" }, { "Source", 95, 3, "LEFT" },
         { "Details", 250, 4, "LEFT" }, { "Amount", 105, 5, "RIGHT" },
     }
+    -- the first view: one row per source; click one for its transactions
+    local SUMMARY = {
+        { "Source", 230, nil, "LEFT" }, { "Transactions", 100, nil, "RIGHT" }, { "Earned", 115, nil, "RIGHT" },
+        { "Spent", 115, nil, "RIGHT" }, { "Net", 120, nil, "RIGHT" },
+    }
+    local source = nil                   -- nil: the list of sources
 
     -- time ranges for the dropdown; each gives (from, to) in seconds
     local function Midnight(daysAgo)
@@ -2084,7 +2090,10 @@ do
         local list = {}
         local from, to = RANGES[range][2]()
         for _, r in ipairs(DB.ledger or {}) do
-            if (not who or r[2] == who) and r[1] >= from and r[1] < to then list[#list + 1] = r end
+            if (not who or r[2] == who) and r[1] >= from and r[1] < to
+                and (not source or r[3] == source) then
+                list[#list + 1] = r
+            end
         end
         local f = COLS[sortCol][3]
         table.sort(list, function(a, b)
@@ -2112,20 +2121,52 @@ do
         if win.rangeButton then win.rangeButton:SetText(RANGES[range][1]) end
         if win.range and win.range.GenerateMenu then win.range:GenerateMenu() end
         local list = Filtered()
-        offset = math.max(0, math.min(offset, #list - VISIBLE))
+        local cols = source and COLS or SUMMARY
+        win.Layout(cols)
+        win.back:SetShown(source ~= nil)
+        win.title:SetText(source and ("Ledger: " .. source) or "Ledger")
+        local shown
+        if source then
+            shown = list
+        else
+            -- add up per source, busiest first
+            local by, order = {}, {}
+            for _, r in ipairs(list) do
+                local e = by[r[3]]
+                if not e then e = { r[3], 0, 0, 0 }; by[r[3]] = e; order[#order + 1] = e end
+                e[2] = e[2] + (r[7] or 1)
+                if r[5] > 0 then e[3] = e[3] + r[5] else e[4] = e[4] - r[5] end
+            end
+            table.sort(order, function(a, b) return a[3] + a[4] > b[3] + b[4] end)
+            shown = order
+        end
+        offset = math.max(0, math.min(offset, #shown - VISIBLE))
         for i, row in ipairs(win.rows) do
-            local r = list[offset + i]
-            if r then
+            local r = shown[offset + i]
+            row.key = nil
+            if r and source then
                 row.cells[1]:SetText(date("%m/%d %H:%M", r[1]))
                 row.cells[2]:SetText(CharText(r))
                 row.cells[3]:SetText(r[3])
                 row.cells[4]:SetText(r[4])
                 row.cells[5]:SetText(AmountText(r[5]))
                 row:Show()
+            elseif r then
+                row.key = r[1]
+                row.cells[1]:SetText(r[1])
+                row.cells[2]:SetText(r[2])
+                row.cells[3]:SetText(r[3] > 0 and Coin(r[3]) or "|cff808080-|r")
+                row.cells[4]:SetText(r[4] > 0 and Coin(r[4]) or "|cff808080-|r")
+                row.cells[5]:SetText(AmountText(r[3] - r[4]))
+                row:Show()
             else
                 row:Hide()
             end
         end
+        if #shown == 0 then
+            win.empty:SetText("No transactions for " .. RANGES[range][1]:lower() .. ".")
+        end
+        win.empty:SetShown(#shown == 0)
         local earned, spent = 0, 0
         for _, r in ipairs(list) do
             if r[5] > 0 then earned = earned + r[5] else spent = spent - r[5] end
@@ -2133,11 +2174,13 @@ do
         local net = earned - spent
         win.foot:SetText(string.format("%d transactions   Earned %s   Spent %s   Net %s",
             #list, Coin(earned), Coin(spent), (net >= 0 and "|cff33ff33+|r" or "|cffff4444-|r") .. Coin(math.abs(net))))
-        win.pos:SetText(#list > VISIBLE and string.format("%d-%d of %d", offset + 1,
-            math.min(offset + VISIBLE, #list), #list) or "")
+        win.pos:SetText(#shown > VISIBLE and string.format("%d-%d of %d", offset + 1,
+            math.min(offset + VISIBLE, #shown), #shown) or "")
         for i, h in ipairs(win.heads) do
-            h.text:SetText(COLS[i][1] .. (i == sortCol and (sortDesc and " v" or " ^") or ""))
+            h.text:SetText(cols[i][1] .. ((source and i == sortCol) and (sortDesc and " v" or " ^") or ""))
         end
+        win.tip:SetText(source and "Scroll to move (Shift: a page). Click a column to sort."
+            or "Click a source to see its transactions.")
     end
 
     local function CSV()
@@ -2168,6 +2211,7 @@ do
         local title = win.TitleText or win:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         if not win.TitleText then title:SetPoint("TOP", 0, -5) end
         title:SetText("Ledger")
+        win.title = title
 
         -- character filter
         local prev = CreateFrame("Button", nil, win, "UIPanelButtonTemplate")
@@ -2238,6 +2282,7 @@ do
             h.text = h:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
             h.text:SetAllPoints(); h.text:SetJustifyH(c[4])
             h:SetScript("OnClick", function()
+                if not source then return end
                 if sortCol == i then sortDesc = not sortDesc else sortCol, sortDesc = i, (i == 1 or i == 5) end
                 offset = 0
                 LedgerRefresh()
@@ -2252,8 +2297,12 @@ do
         -- rows
         win.rows = {}
         for i = 1, VISIBLE do
-            local row = CreateFrame("Frame", nil, win)
+            local row = CreateFrame("Button", nil, win)
             row:SetSize(680, ROW_H)
+            row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+            row:SetScript("OnClick", function(self)
+                if self.key then source = self.key; offset = 0; LedgerRefresh() end
+            end)
             row:SetPoint("TOPLEFT", 20, -86 - (i - 1) * ROW_H)
             if i % 2 == 0 then
                 local bg = row:CreateTexture(nil, "BACKGROUND")
@@ -2270,6 +2319,33 @@ do
             end
             win.rows[i] = row
         end
+        -- place headers and cells for a set of columns
+        function win.Layout(cols)
+            local hx = 20
+            for i, c in ipairs(cols) do
+                local h = win.heads[i]
+                h:ClearAllPoints(); h:SetPoint("TOPLEFT", hx, -64); h:SetSize(c[2], 18)
+                h.text:SetJustifyH(c[4])
+                hx = hx + c[2]
+            end
+            for _, row in ipairs(win.rows) do
+                local cx = 0
+                for j, c in ipairs(cols) do
+                    local fs = row.cells[j]
+                    fs:ClearAllPoints(); fs:SetPoint("LEFT", cx + 2, 0)
+                    fs:SetWidth(c[2] - 6); fs:SetJustifyH(c[4])
+                    cx = cx + c[2]
+                end
+            end
+        end
+        win.empty = win:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+        win.empty:SetPoint("TOP", 0, -110)
+        -- back to the list of sources
+        win.back = CreateFrame("Button", nil, win, "UIPanelButtonTemplate")
+        win.back:SetSize(120, 22)
+        win.back:SetPoint("LEFT", nxt, "RIGHT", 12, 0)
+        win.back:SetText("< All sources")
+        win.back:SetScript("OnClick", function() source = nil; offset = 0; LedgerRefresh() end)
         win:EnableMouseWheel(true)
         win:SetScript("OnMouseWheel", function(_, d)
             offset = offset - d * (IsShiftKeyDown() and VISIBLE or 3)
@@ -2313,7 +2389,8 @@ do
         hover:SetScript("OnLeave", function() GameTooltip:Hide() end)
         local tip = win:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
         tip:SetPoint("BOTTOMLEFT", 20, 30)
-        tip:SetText("Scroll to move (Shift: a page). Click a column to sort. Hover the totals for a breakdown.")
+        win.tip = tip
+        tip:SetText("")
         win:SetScript("OnShow", LedgerRefresh)
         win:Hide()          -- new frames start shown; the first click then opens it
     end
@@ -2321,7 +2398,7 @@ do
     OpenLedger = function()
         if not win then Build() end
         -- opens on this character, today
-        if win:IsShown() then win:Hide() else who = me; range = 1; offset = 0; win:Show() end
+        if win:IsShown() then win:Hide() else who = me; range = 1; source = nil; offset = 0; win:Show() end
     end
 
     -----------------------------------------------------------------------
