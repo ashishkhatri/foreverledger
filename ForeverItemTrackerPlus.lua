@@ -2120,8 +2120,7 @@ do
     function LedgerRefresh()
         if not (win and win:IsShown()) then return end
         win.who:SetText(who and ColoredName(DB.chars[who]) or "All characters")
-        if win.rangeButton then win.rangeButton:SetText(RANGES[range][1]) end
-        if win.range and win.range.GenerateMenu then win.range:GenerateMenu() end
+        win.rangeButton:SetText(RANGES[range][1] .. "  v")
         local list = Filtered()
         local cols = source and COLS or SUMMARY
         win.Layout(cols)
@@ -2288,25 +2287,36 @@ do
         local export = CreateFrame("Button", nil, win, "UIPanelButtonTemplate")
         export:SetSize(110, 22); export:SetPoint("TOPRIGHT", -14, -32); export:SetText("Copy as CSV")
 
-        -- time range: the game's dropdown where there is one, else a button that cycles
+        -- time range: a button that opens a small list of ranges. (The game's
+        -- own dropdown menus share their menu system with the right-click
+        -- unit menu, and using them from an addon gets Set Focus / Target
+        -- Marker Icon there blocked, so this one is home-made.)
         local function SetRange(i) range = i; offset = 0; LedgerRefresh() end
-        local ok, dd = pcall(CreateFrame, "DropdownButton", nil, win, "WowStyle1DropdownTemplate")
-        if ok and dd and dd.SetupMenu then
-            dd:SetWidth(130)
-            dd:SetPoint("RIGHT", export, "LEFT", -10, 0)
-            dd:SetupMenu(function(_, root)
-                for i, r in ipairs(RANGES) do
-                    root:CreateRadio(r[1], function() return range == i end, function() SetRange(i) end)
-                end
-            end)
-            win.range = dd
-        else
-            local b = CreateFrame("Button", nil, win, "UIPanelButtonTemplate")
-            b:SetSize(130, 22)
-            b:SetPoint("RIGHT", export, "LEFT", -10, 0)
-            b:SetScript("OnClick", function() SetRange(range % #RANGES + 1) end)
-            win.rangeButton = b
+        local rb = CreateFrame("Button", nil, win, "UIPanelButtonTemplate")
+        rb:SetSize(130, 22)
+        rb:SetPoint("RIGHT", export, "LEFT", -10, 0)
+        win.rangeButton = rb
+        local list = CreateFrame("Frame", nil, rb, "TooltipBackdropTemplate")
+        list:SetPoint("TOPLEFT", rb, "BOTTOMLEFT", 0, -2)
+        list:SetSize(130, #RANGES * 20 + 10)
+        list:SetFrameStrata("FULLSCREEN_DIALOG")
+        list:Hide()
+        if not list.SetBackdrop then
+            local bg = list:CreateTexture(nil, "BACKGROUND")
+            bg:SetAllPoints(); bg:SetColorTexture(0.05, 0.05, 0.08, 0.95)
         end
+        for i, r in ipairs(RANGES) do
+            local o = CreateFrame("Button", nil, list)
+            o:SetSize(120, 20)
+            o:SetPoint("TOPLEFT", 5, -5 - (i - 1) * 20)
+            o:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+            o.text = o:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            o.text:SetPoint("LEFT", 6, 0)
+            o.text:SetText(r[1])
+            o:SetScript("OnClick", function() list:Hide(); SetRange(i) end)
+        end
+        rb:SetScript("OnClick", function() list:SetShown(not list:IsShown()) end)
+        win:HookScript("OnHide", function() list:Hide() end)
         local box = CreateFrame("Frame", nil, win, "BasicFrameTemplateWithInset")
         box:SetAllPoints(); box:SetFrameLevel(win:GetFrameLevel() + 20); box:Hide()
         local bs = CreateFrame("ScrollFrame", nil, box, "UIPanelScrollFrameTemplate")
