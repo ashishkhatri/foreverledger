@@ -1981,11 +1981,25 @@ do
         icon:SetSize(12, 12)
         icon:SetPoint("LEFT")
         icon:SetTexture("Interface\\MoneyFrame\\UI-GoldIcon")
-        -- and a little down arrow: most valuable first
-        local arrow = b:CreateTexture(nil, "ARTWORK")
-        arrow:SetSize(9, 9)
-        arrow:SetPoint("LEFT", icon, "RIGHT", 1, -1)
-        arrow:SetTexture("Interface\\Buttons\\Arrow-Down-Up")
+        -- and a thin down arrow (most valuable first): a line with a V at the bottom
+        local arrow = CreateFrame("Frame", nil, b)
+        arrow:SetSize(7, 12)
+        arrow:SetPoint("LEFT", icon, "RIGHT", 2, 0)
+        local parts = {}
+        local shaft = arrow:CreateTexture(nil, "ARTWORK")
+        shaft:SetSize(1.5, 11)
+        shaft:SetPoint("TOP", 0, 0)
+        parts[1] = shaft
+        for i, side in ipairs({ -1, 1 }) do
+            local wing = arrow:CreateTexture(nil, "ARTWORK")
+            wing:SetSize(1.5, 5)
+            wing:SetPoint("BOTTOM", arrow, "BOTTOM", side * 1.6, 0.6)
+            wing:SetRotation(side * math.rad(40))
+            parts[i + 1] = wing
+        end
+        function arrow:SetVertexColor(r, g, bl)
+            for _, t in ipairs(parts) do t:SetColorTexture(r, g, bl, 1) end
+        end
         arrow:SetVertexColor(0.9, 0.9, 0.9)
         icon:SetVertexColor(0.9, 0.9, 0.9)
         local hl = b:CreateTexture(nil, "HIGHLIGHT")
