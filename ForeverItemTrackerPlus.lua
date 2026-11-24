@@ -1963,39 +1963,31 @@ do
         frame.fitpSort = b
         -- bottom-left of the bags, on the empty end of the money bar (level with
         -- the money), so the game's own layout is left untouched
-        b:SetSize(18, 18)
+        b:SetSize(16, 16)
         local money = frame.MoneyFrame or _G[(frame:GetName() or "") .. "MoneyFrame"]
         local function Place()
             local y = 8
             if money and money:GetBottom() and frame:GetBottom() then
-                y = money:GetBottom() + money:GetHeight() / 2 - frame:GetBottom() - 9
+                y = money:GetBottom() + money:GetHeight() / 2 - frame:GetBottom() - 8
             end
             b:ClearAllPoints()
-            b:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 14, y)
+            b:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 16, y)
         end
         Place()
         frame:HookScript("OnShow", function() C_Timer.After(0, Place) end)
         b:SetFrameLevel(frame:GetFrameLevel() + 10)
-        -- a coin icon with a thin grey rim
-        local edge = b:CreateTexture(nil, "BACKGROUND")
-        edge:SetAllPoints()
-        edge:SetColorTexture(0.45, 0.45, 0.45, 1)          -- grey rim, like the broom's
-        local inner = b:CreateTexture(nil, "BORDER")
-        inner:SetPoint("TOPLEFT", edge, "TOPLEFT", 1, -1)
-        inner:SetPoint("BOTTOMRIGHT", edge, "BOTTOMRIGHT", -1, 1)
-        inner:SetColorTexture(0, 0, 0, 1)
+        -- just the coin icon, no frame
         local icon = b:CreateTexture(nil, "ARTWORK")
-        icon:SetPoint("TOPLEFT", inner, "TOPLEFT", 1, -1)
-        icon:SetPoint("BOTTOMRIGHT", inner, "BOTTOMRIGHT", -1, 1)
+        icon:SetAllPoints()
         icon:SetTexture("Interface\\Icons\\INV_Misc_Coin_17")
-        icon:SetTexCoord(0.1, 0.9, 0.1, 0.9)
-        icon:SetVertexColor(0.85, 0.85, 0.85)
+        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        icon:SetVertexColor(0.9, 0.9, 0.9)
         local hl = b:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAllPoints(icon)
         hl:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
         hl:SetBlendMode("ADD")
         b:SetScript("OnMouseDown", function() icon:SetVertexColor(0.7, 0.7, 0.7) end)
-        b:SetScript("OnMouseUp", function() icon:SetVertexColor(0.85, 0.85, 0.85) end)
+        b:SetScript("OnMouseUp", function() icon:SetVertexColor(0.9, 0.9, 0.9) end)
         b:SetScript("OnClick", S.Start)
         b:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_LEFT")
