@@ -1963,7 +1963,7 @@ do
         frame.fitpSort = b
         -- bottom-left of the bags, on the empty end of the money bar (level with
         -- the money), so the game's own layout is left untouched
-        b:SetSize(12, 12)
+        b:SetSize(22, 12)
         local money = frame.MoneyFrame or _G[(frame:GetName() or "") .. "MoneyFrame"]
         local function Place()
             local y = 8
@@ -1978,15 +1978,22 @@ do
         b:SetFrameLevel(frame:GetFrameLevel() + 10)
         -- the same small gold coin as the money display beside it
         local icon = b:CreateTexture(nil, "ARTWORK")
-        icon:SetAllPoints()
+        icon:SetSize(12, 12)
+        icon:SetPoint("LEFT")
         icon:SetTexture("Interface\\MoneyFrame\\UI-GoldIcon")
+        -- and a little down arrow: most valuable first
+        local arrow = b:CreateTexture(nil, "ARTWORK")
+        arrow:SetSize(9, 9)
+        arrow:SetPoint("LEFT", icon, "RIGHT", 1, -1)
+        arrow:SetTexture("Interface\\Buttons\\Arrow-Down-Up")
+        arrow:SetVertexColor(0.9, 0.9, 0.9)
         icon:SetVertexColor(0.9, 0.9, 0.9)
         local hl = b:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAllPoints(icon)
         hl:SetTexture("Interface\\MoneyFrame\\UI-GoldIcon")
         hl:SetBlendMode("ADD")
-        b:SetScript("OnMouseDown", function() icon:SetVertexColor(0.7, 0.7, 0.7) end)
-        b:SetScript("OnMouseUp", function() icon:SetVertexColor(0.9, 0.9, 0.9) end)
+        b:SetScript("OnMouseDown", function() icon:SetVertexColor(0.7, 0.7, 0.7); arrow:SetVertexColor(0.7, 0.7, 0.7) end)
+        b:SetScript("OnMouseUp", function() icon:SetVertexColor(0.9, 0.9, 0.9); arrow:SetVertexColor(0.9, 0.9, 0.9) end)
         b:SetScript("OnClick", S.Start)
         b:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_LEFT")
