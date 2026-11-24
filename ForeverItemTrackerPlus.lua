@@ -1949,13 +1949,18 @@ do
         end
         b:SetFrameLevel(frame:GetFrameLevel() + 10)
         -- a plain icon with a thin dark edge, like the Clean Up button beside it
+        -- (measured against the broom: its picture starts lower than the button's top)
         local edge = b:CreateTexture(nil, "BACKGROUND")
-        edge:SetPoint("TOPLEFT", 4, -3)
-        edge:SetPoint("BOTTOMRIGHT", -4, 3)
-        edge:SetColorTexture(0, 0, 0, 0.9)
+        edge:SetPoint("TOPLEFT", 4, -6)
+        edge:SetPoint("BOTTOMRIGHT", -5, 2)
+        edge:SetColorTexture(0.45, 0.45, 0.45, 1)          -- grey rim, like the broom's
+        local inner = b:CreateTexture(nil, "BORDER")
+        inner:SetPoint("TOPLEFT", edge, "TOPLEFT", 1, -1)
+        inner:SetPoint("BOTTOMRIGHT", edge, "BOTTOMRIGHT", -1, 1)
+        inner:SetColorTexture(0, 0, 0, 1)
         local icon = b:CreateTexture(nil, "ARTWORK")
-        icon:SetPoint("TOPLEFT", edge, "TOPLEFT", 1, -1)
-        icon:SetPoint("BOTTOMRIGHT", edge, "BOTTOMRIGHT", -1, 1)
+        icon:SetPoint("TOPLEFT", inner, "TOPLEFT", 1, -1)
+        icon:SetPoint("BOTTOMRIGHT", inner, "BOTTOMRIGHT", -1, 1)
         icon:SetTexture("Interface\\Icons\\INV_Misc_Coin_17")
         icon:SetTexCoord(0.1, 0.9, 0.1, 0.9)
         icon:SetVertexColor(0.85, 0.85, 0.85)
@@ -1972,6 +1977,18 @@ do
         hl:SetBlendMode("ADD")
         b:SetScript("OnMouseDown", function() icon:SetVertexColor(0.7, 0.7, 0.7) end)
         b:SetScript("OnMouseUp", function() icon:SetVertexColor(0.85, 0.85, 0.85) end)
+        -- keep the search box from running under the button
+        local function Room()
+            local search = BagItemSearchBox
+            if not (search and search:GetParent() == frame and search:IsShown()) then return end
+            local right, left = search:GetRight(), b:GetLeft()
+            if right and left and right > left - 6 then
+                search:SetWidth(math.max(60, search:GetWidth() - (right - left + 6)))
+            end
+        end
+        frame:HookScript("OnShow", function() C_Timer.After(0, Room) end)
+        frame:HookScript("OnSizeChanged", function() C_Timer.After(0, Room) end)
+        C_Timer.After(0, Room)
         b:SetScript("OnClick", S.Start)
         b:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_LEFT")
