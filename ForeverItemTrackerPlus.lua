@@ -1918,9 +1918,34 @@ do
         if made == 0 and not waiting then S.Stop() end
     end
 
+    -- a cover over the bags while sorting, so you don't watch items jump about
+    function S.Cover(show)
+        for _, name in ipairs({ "ContainerFrameCombinedBags", "ContainerFrame1" }) do
+            local fr = _G[name]
+            if fr and fr.fitpSort then
+                local c = fr.fitpCover
+                if not c then
+                    c = CreateFrame("Frame", nil, fr)
+                    c:SetPoint("TOPLEFT", 8, -56)
+                    c:SetPoint("BOTTOMRIGHT", -8, 30)
+                    c:SetFrameLevel(fr:GetFrameLevel() + 50)
+                    c:EnableMouse(true)                   -- no clicking items mid-sort
+                    local bg = c:CreateTexture(nil, "BACKGROUND")
+                    bg:SetAllPoints(); bg:SetColorTexture(0.04, 0.04, 0.06, 0.92)
+                    c.text = c:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+                    c.text:SetPoint("CENTER")
+                    c.text:SetText("Sorting by value...")
+                    fr.fitpCover = c
+                end
+                c:SetShown(show)
+            end
+        end
+    end
+
     function S.Stop(why)
         if S.ticker then S.ticker:Cancel(); S.ticker = nil end
         S.running = false
+        S.Cover(false)
         if why then Msg("bag sort %s.", why) end
     end
 
@@ -1928,6 +1953,7 @@ do
         if S.running then return end
         if InCombatLockdown() then Msg("can't sort bags in combat."); return end
         S.running, S.moves = true, 0
+        S.Cover(true)
         S.ticker = C_Timer.NewTicker(0.05, Step)
     end
 
@@ -1978,17 +2004,31 @@ do
         b:SetScript("OnMouseDown", function() icon:SetVertexColor(0.7, 0.7, 0.7) end)
         b:SetScript("OnMouseUp", function() icon:SetVertexColor(0.85, 0.85, 0.85) end)
         -- keep the search box from running under the button
+        -- (the box may be anchored at both ends, so move its right end rather
+        -- than set a width the anchors would override)
         local function Room()
             local search = BagItemSearchBox
-            if not (search and search:GetParent() == frame and search:IsShown()) then return end
+            if not (search and search:IsVisible() and b:IsVisible()) then return end
             local right, left = search:GetRight(), b:GetLeft()
-            if right and left and right > left - 6 then
-                search:SetWidth(math.max(60, search:GetWidth() - (right - left + 6)))
+            if not (right and left) or right <= left - 6 then return end
+            local cut = right - left + 6
+            local moved = false
+            for i = 1, search:GetNumPoints() do
+                local point, rel, relPoint, x, y = search:GetPoint(i)
+                if point and point:find("RIGHT") then
+                    search:SetPoint(point, rel, relPoint, (x or 0) - cut, y or 0)
+                    moved = true
+                end
             end
+            if not moved then search:SetWidth(math.max(60, search:GetWidth() - cut)) end
         end
-        frame:HookScript("OnShow", function() C_Timer.After(0, Room) end)
-        frame:HookScript("OnSizeChanged", function() C_Timer.After(0, Room) end)
-        C_Timer.After(0, Room)
+        local function Later()
+            C_Timer.After(0, Room)
+            C_Timer.After(0.2, Room)
+        end
+        frame:HookScript("OnShow", Later)
+        frame:HookScript("OnSizeChanged", Later)
+        Later()
         b:SetScript("OnClick", S.Start)
         b:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_LEFT")
