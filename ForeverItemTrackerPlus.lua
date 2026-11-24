@@ -2006,13 +2006,15 @@ do
         -- keep the search box from running under the button
         -- (the box may be anchored at both ends, so move its right end rather
         -- than set a width the anchors would override)
+        local busy
         local function Room()
             local search = BagItemSearchBox
-            if not (search and search:IsVisible() and b:IsVisible()) then return end
+            if busy or not (search and search:IsVisible() and b:IsVisible()) then return end
             local right, left = search:GetRight(), b:GetLeft()
             if not (right and left) or right <= left - 6 then return end
             local cut = right - left + 6
             local moved = false
+            busy = true
             for i = 1, search:GetNumPoints() do
                 local point, rel, relPoint, x, y = search:GetPoint(i)
                 if point and point:find("RIGHT") then
@@ -2021,6 +2023,7 @@ do
                 end
             end
             if not moved then search:SetWidth(math.max(60, search:GetWidth() - cut)) end
+            busy = false
         end
         local function Later()
             C_Timer.After(0, Room)
@@ -2028,6 +2031,16 @@ do
         end
         frame:HookScript("OnShow", Later)
         frame:HookScript("OnSizeChanged", Later)
+        -- the game puts the search box back whenever the bags change (after a
+        -- sort, say): fix it again each time it's moved or resized
+        if BagItemSearchBox and not BagItemSearchBox.fitpHooked then
+            BagItemSearchBox.fitpHooked = true
+            hooksecurefunc(BagItemSearchBox, "SetPoint", Later)
+            hooksecurefunc(BagItemSearchBox, "SetWidth", Later)
+        end
+        local watch = CreateFrame("Frame", nil, frame)
+        watch:RegisterEvent("BAG_UPDATE_DELAYED")
+        watch:SetScript("OnEvent", Later)
         Later()
         b:SetScript("OnClick", S.Start)
         b:SetScript("OnEnter", function(self)
