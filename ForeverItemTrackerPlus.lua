@@ -852,6 +852,7 @@ local function AddItemLines(tt, id)
             AddVendorLine(tt, id)
             if de then AddDisenchantLine(tt, id) end
         end
+        AddRecipeLine(tt, id)          -- bind-on-pickup recipes still cost something to use
         return
     end
     tt:AddLine(" ")                                -- a gap before the prices
