@@ -738,6 +738,7 @@ end
 local ItemCost                              -- crafting cost of an item (defined with the professions code)
 local AddCrateLine                          -- Waylaid Crates (defined below)
 local AddWritLine                           -- Craftsman's Writs (defined below)
+local AddRecipeLine                         -- cost to craft, on recipe items (defined below)
 
 local function AddDisenchantLine(tt, id)
     local p = DB.prices[priceKey]
@@ -865,6 +866,7 @@ local function AddItemLines(tt, id)
         AddDisenchantLine(tt, id)
         AddCrateLine(tt, id)
         AddWritLine(tt, id)
+        AddRecipeLine(tt, id)
     else
         tt:AddDoubleLine("AH", "|cff808080no scan yet|r", 1, .82, 0, 1, 1, 1)
     end
@@ -1009,6 +1011,74 @@ local function IDForName(name)
         if id then DB.itemNames[name] = id; return id end
     end
     return DB.itemNames[name]
+end
+
+---------------------------------------------------------------------------
+-- Recipe items (patterns, plans, manuals...): the cost to craft what they
+-- teach, one line per reagent, read from the reagents the tooltip lists
+-- ("Silk Cloth (2)"). Prices from the last AH scan; a reagent you can make
+-- yourself costs whichever is cheaper.
+---------------------------------------------------------------------------
+local RECIPE_CLASS = Enum and Enum.ItemClass and Enum.ItemClass.Recipe or 9
+
+-- the reagents the tooltip lists, as { name, count } (nil if none found)
+local function TooltipReagents(tt)
+    local name = tt.GetName and tt:GetName()
+    if not name then return end
+    local afterTeach = false
+    for i = 1, tt:NumLines() do
+        local fs = _G[name .. "TextLeft" .. i]
+        local text = fs and fs:GetText()
+        if text then
+            if text:find("[Tt]eaches you") then
+                afterTeach = true
+            elseif afterTeach and not text:find("^Requires") then
+                local list, ok = {}, true
+                text = text:gsub("^Reagents:%s*", "")
+                for part in text:gmatch("[^,]+") do
+                    part = part:gsub("^%s+", ""):gsub("%s+$", ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+                    local n, c = part:match("^(.-)%s*%((%d+)%)$")
+                    if n and n ~= "" then list[#list + 1] = { n, tonumber(c) }
+                    else n = part:match("^(.-)$"); if n and n ~= "" and not part:find("%(") then
+                        list[#list + 1] = { n, 1 } else ok = false end end
+                end
+                if ok and #list > 0 then return list end
+                return                     -- only the line right after "Teaches you"
+            end
+        end
+    end
+end
+
+AddRecipeLine = function(tt, id)
+    local classID = C_Item and C_Item.GetItemInfoInstant and select(6, C_Item.GetItemInfoInstant(id))
+    if classID ~= RECIPE_CLASS then return end
+    local reagents = TooltipReagents(tt)
+    if not reagents then return end
+    local p = DB.prices[priceKey]
+    if not (p and p.time) then
+        tt:AddDoubleLine("Cost to craft", "|cff808080scan the AH first|r", 1, .82, 0, 1, 1, 1)
+        return
+    end
+    local rows, total, missing = {}, 0, false
+    for _, r in ipairs(reagents) do
+        local name, n = r[1], r[2]
+        local rid = IDForName(name)
+        local each = p.byName and p.byName[name] or (rid and p.items[rid])
+        if rid and Me().crafts and Me().crafts[rid] then
+            local ok, made = pcall(ItemCost, rid, p, {}, {}, 0, {})
+            if ok and made and (not each or made < each) then each = made end
+        end
+        rows[#rows + 1] = { name, n, each }
+        if each then total = total + each * n else missing = true end
+    end
+    local age = time() - p.time
+    local ageText = (age > STALE and "|cffff3333" or "|cff808080") .. Ago(age) .. "|r"
+    tt:AddDoubleLine("Cost to craft " .. ageText,
+        Coin(math.floor(total + 0.5)) .. (missing and " |cff808080+|r" or ""), 1, .82, 0, 1, 1, 1)
+    for _, r in ipairs(rows) do
+        tt:AddDoubleLine("   " .. r[2] .. " x " .. r[1],
+            r[3] and Coin(math.floor(r[3] * r[2] + 0.5)) or "|cff808080not on the AH|r", 1, 1, 1, 1, 1, 1)
+    end
 end
 
 AddWritLine = function(tt, id)
