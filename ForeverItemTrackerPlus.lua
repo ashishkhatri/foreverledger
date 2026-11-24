@@ -1992,9 +1992,10 @@ do
         parts[1] = shaft
         for i, side in ipairs({ -1, 1 }) do
             local wing = arrow:CreateTexture(nil, "ARTWORK")
+            -- each wing runs from the tip up and outward, so their ends meet at the point
             wing:SetSize(1.5, 5)
-            wing:SetPoint("BOTTOM", arrow, "BOTTOM", side * 1.6, 0.6)
-            wing:SetRotation(side * math.rad(40))
+            wing:SetPoint("CENTER", arrow, "BOTTOM", side * 1.6, 0.5 + 1.9)
+            wing:SetRotation(-side * math.rad(40))
             parts[i + 1] = wing
         end
         function arrow:SetVertexColor(r, g, bl)
