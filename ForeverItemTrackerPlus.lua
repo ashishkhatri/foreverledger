@@ -1961,24 +1961,24 @@ do
         if not frame or frame.fitpSort then return end
         local b = CreateFrame("Button", nil, frame)
         frame.fitpSort = b
-        -- the same size as the game's Clean Up button, styled like an action button
-        local cleanup = BagItemAutoSortButton
-        -- exactly Clean Up's button size (28 x 26), right beside it, top edges level;
-        -- the coin is inset inside it the way the broom is inside Clean Up's art
-        local size = 26
-        if cleanup and cleanup:GetParent() == frame then
-            b:SetSize(cleanup:GetSize())
-            b:SetPoint("TOPRIGHT", cleanup, "TOPLEFT", -2, 0)
-        else
-            b:SetSize(size, size)
-            b:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -32, -32)
+        -- bottom-left of the bags, on the empty end of the money bar (level with
+        -- the money), so the game's own layout is left untouched
+        b:SetSize(18, 18)
+        local money = frame.MoneyFrame or _G[(frame:GetName() or "") .. "MoneyFrame"]
+        local function Place()
+            local y = 8
+            if money and money:GetBottom() and frame:GetBottom() then
+                y = money:GetBottom() + money:GetHeight() / 2 - frame:GetBottom() - 9
+            end
+            b:ClearAllPoints()
+            b:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 14, y)
         end
+        Place()
+        frame:HookScript("OnShow", function() C_Timer.After(0, Place) end)
         b:SetFrameLevel(frame:GetFrameLevel() + 10)
-        -- a plain icon with a thin dark edge, like the Clean Up button beside it
-        -- (measured against the broom: its picture starts lower than the button's top)
+        -- a coin icon with a thin grey rim
         local edge = b:CreateTexture(nil, "BACKGROUND")
-        edge:SetPoint("TOPLEFT", 4, -6)
-        edge:SetPoint("BOTTOMRIGHT", -5, 2)
+        edge:SetAllPoints()
         edge:SetColorTexture(0.45, 0.45, 0.45, 1)          -- grey rim, like the broom's
         local inner = b:CreateTexture(nil, "BORDER")
         inner:SetPoint("TOPLEFT", edge, "TOPLEFT", 1, -1)
@@ -1990,58 +1990,12 @@ do
         icon:SetTexture("Interface\\Icons\\INV_Misc_Coin_17")
         icon:SetTexCoord(0.1, 0.9, 0.1, 0.9)
         icon:SetVertexColor(0.85, 0.85, 0.85)
-        -- the same hover glow the Clean Up button uses
         local hl = b:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAllPoints(icon)
-        local theirs = cleanup and cleanup.GetHighlightTexture and cleanup:GetHighlightTexture()
-        local atlas = theirs and theirs.GetAtlas and theirs:GetAtlas()
-        if atlas then
-            hl:SetAtlas(atlas)
-        else
-            hl:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
-        end
+        hl:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
         hl:SetBlendMode("ADD")
         b:SetScript("OnMouseDown", function() icon:SetVertexColor(0.7, 0.7, 0.7) end)
         b:SetScript("OnMouseUp", function() icon:SetVertexColor(0.85, 0.85, 0.85) end)
-        -- keep the search box from running under the button
-        -- (the box may be anchored at both ends, so move its right end rather
-        -- than set a width the anchors would override)
-        local busy
-        local function Room()
-            local search = BagItemSearchBox
-            if busy or not (search and search:IsVisible() and b:IsVisible()) then return end
-            local right, left = search:GetRight(), b:GetLeft()
-            if not (right and left) or right <= left - 6 then return end
-            local cut = right - left + 6
-            local moved = false
-            busy = true
-            for i = 1, search:GetNumPoints() do
-                local point, rel, relPoint, x, y = search:GetPoint(i)
-                if point and point:find("RIGHT") then
-                    search:SetPoint(point, rel, relPoint, (x or 0) - cut, y or 0)
-                    moved = true
-                end
-            end
-            if not moved then search:SetWidth(math.max(60, search:GetWidth() - cut)) end
-            busy = false
-        end
-        local function Later()
-            C_Timer.After(0, Room)
-            C_Timer.After(0.2, Room)
-        end
-        frame:HookScript("OnShow", Later)
-        frame:HookScript("OnSizeChanged", Later)
-        -- the game puts the search box back whenever the bags change (after a
-        -- sort, say): fix it again each time it's moved or resized
-        if BagItemSearchBox and not BagItemSearchBox.fitpHooked then
-            BagItemSearchBox.fitpHooked = true
-            hooksecurefunc(BagItemSearchBox, "SetPoint", Later)
-            hooksecurefunc(BagItemSearchBox, "SetWidth", Later)
-        end
-        local watch = CreateFrame("Frame", nil, frame)
-        watch:RegisterEvent("BAG_UPDATE_DELAYED")
-        watch:SetScript("OnEvent", Later)
-        Later()
         b:SetScript("OnClick", S.Start)
         b:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_LEFT")
