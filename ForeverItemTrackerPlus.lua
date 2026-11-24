@@ -1937,23 +1937,25 @@ do
         frame.fitpSort = b
         -- the same size as the game's Clean Up button, styled like an action button
         local cleanup = BagItemAutoSortButton
-        -- a touch smaller than Clean Up's button (its art has empty space round it)
-        local size = (cleanup and cleanup:GetParent() == frame and math.floor(cleanup:GetHeight() * 0.72 + 0.5)) or 20
-        b:SetSize(size, size)
+        -- exactly Clean Up's button size (28 x 26), right beside it, top edges level;
+        -- the coin is inset inside it the way the broom is inside Clean Up's art
+        local size = 26
         if cleanup and cleanup:GetParent() == frame then
-            -- Clean Up's picture sits a little below the middle of its button
-            b:SetPoint("RIGHT", cleanup, "LEFT", -5, -3)
+            b:SetSize(cleanup:GetSize())
+            b:SetPoint("TOPRIGHT", cleanup, "TOPLEFT", -2, 0)
         else
+            b:SetSize(size, size)
             b:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -32, -32)
         end
         b:SetFrameLevel(frame:GetFrameLevel() + 10)
         -- a plain icon with a thin dark edge, like the Clean Up button beside it
         local edge = b:CreateTexture(nil, "BACKGROUND")
-        edge:SetAllPoints()
+        edge:SetPoint("TOPLEFT", 4, -3)
+        edge:SetPoint("BOTTOMRIGHT", -4, 3)
         edge:SetColorTexture(0, 0, 0, 0.9)
         local icon = b:CreateTexture(nil, "ARTWORK")
-        icon:SetPoint("TOPLEFT", 1, -1)
-        icon:SetPoint("BOTTOMRIGHT", -1, 1)
+        icon:SetPoint("TOPLEFT", edge, "TOPLEFT", 1, -1)
+        icon:SetPoint("BOTTOMRIGHT", edge, "BOTTOMRIGHT", -1, 1)
         icon:SetTexture("Interface\\Icons\\INV_Misc_Coin_17")
         icon:SetTexCoord(0.1, 0.9, 0.1, 0.9)
         icon:SetVertexColor(0.85, 0.85, 0.85)
