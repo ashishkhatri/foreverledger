@@ -1963,12 +1963,12 @@ do
         frame.fitpSort = b
         -- bottom-left of the bags, on the empty end of the money bar (level with
         -- the money), so the game's own layout is left untouched
-        b:SetSize(16, 16)
+        b:SetSize(12, 12)
         local money = frame.MoneyFrame or _G[(frame:GetName() or "") .. "MoneyFrame"]
         local function Place()
             local y = 8
             if money and money:GetBottom() and frame:GetBottom() then
-                y = money:GetBottom() + money:GetHeight() / 2 - frame:GetBottom() - 8
+                y = money:GetBottom() + money:GetHeight() / 2 - frame:GetBottom() - 6
             end
             b:ClearAllPoints()
             b:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 16, y)
@@ -1976,15 +1976,14 @@ do
         Place()
         frame:HookScript("OnShow", function() C_Timer.After(0, Place) end)
         b:SetFrameLevel(frame:GetFrameLevel() + 10)
-        -- just the coin icon, no frame
+        -- the same small gold coin as the money display beside it
         local icon = b:CreateTexture(nil, "ARTWORK")
         icon:SetAllPoints()
-        icon:SetTexture("Interface\\Icons\\INV_Misc_Coin_17")
-        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        icon:SetTexture("Interface\\MoneyFrame\\UI-GoldIcon")
         icon:SetVertexColor(0.9, 0.9, 0.9)
         local hl = b:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAllPoints(icon)
-        hl:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
+        hl:SetTexture("Interface\\MoneyFrame\\UI-GoldIcon")
         hl:SetBlendMode("ADD")
         b:SetScript("OnMouseDown", function() icon:SetVertexColor(0.7, 0.7, 0.7) end)
         b:SetScript("OnMouseUp", function() icon:SetVertexColor(0.9, 0.9, 0.9) end)
