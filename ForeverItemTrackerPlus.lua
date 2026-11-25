@@ -1076,7 +1076,7 @@ AddCraftCost = function(tt, reagents)
         Coin(math.floor(total + 0.5)) .. (missing and " |cff808080+|r" or ""), 1, .82, 0, 1, 1, 1)
     for _, r in ipairs(rows) do
         tt:AddDoubleLine("   " .. r[2] .. " x " .. r[1],
-            r[3] and Coin(math.floor(r[3] * r[2] + 0.5)) or "|cff808080not on the AH|r", 1, 1, 1, 1, 1, 1)
+            r[3] and Coin(math.floor(r[3] * r[2] + 0.5)) or "|cff808080no price|r", 1, 1, 1, 1, 1, 1)
     end
 end
 
@@ -1091,14 +1091,24 @@ end
 local function HookTrainerTooltip()
     if GameTooltip.fitpTrainer or not GameTooltip.SetTrainerService then return end
     GameTooltip.fitpTrainer = true
-    hooksecurefunc(GameTooltip, "SetTrainerService", function(tt)
-        if not DB then return end
+    GameTooltip:HookScript("OnTooltipCleared", function(self) self.fitpCraft = nil end)
+    -- the reagents line can arrive a moment after the tooltip opens (the first
+    -- time you hover a recipe its items aren't loaded yet), so keep looking
+    -- for it briefly
+    local function Try(tt, owner, tries)
+        if not DB or tt.fitpCraft or not tt:IsShown() or tt:GetOwner() ~= owner then return end
         local reagents = TooltipReagents(tt)
         if reagents then
+            tt.fitpCraft = true
             tt:AddLine(" ")
             AddCraftCost(tt, reagents)
             tt:Show()
+        elseif tries > 0 then
+            C_Timer.After(0.1, function() Try(tt, owner, tries - 1) end)
         end
+    end
+    hooksecurefunc(GameTooltip, "SetTrainerService", function(tt)
+        Try(tt, tt:GetOwner(), 10)
     end)
 end
 
