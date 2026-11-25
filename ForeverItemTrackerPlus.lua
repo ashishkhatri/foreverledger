@@ -1257,11 +1257,15 @@ ItemCost = function(id, p, missing, crafted, depth, seen)
                 end
             end
             seen[id] = nil
-            for _, m in ipairs(subMissing) do missing[#missing + 1] = m end
             local made = ((sch.quantityMin or 1) + (sch.quantityMax or sch.quantityMin or 1)) / 2
+            local craft = sum / math.max(made, 1)
+            -- make it only when that's cheaper than buying it (and every reagent has a price)
+            local buy = p.items[id]
+            if buy and (#subMissing > 0 or craft >= buy) then return buy end
+            for _, m in ipairs(subMissing) do missing[#missing + 1] = m end
             local name = (C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(id)) or ItemInfo(id) or "?"
             crafted[#crafted + 1] = name
-            return sum / math.max(made, 1)
+            return craft
         end
     end
     local v = p.items[id]
