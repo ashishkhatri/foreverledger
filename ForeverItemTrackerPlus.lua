@@ -1023,6 +1023,7 @@ end
 local RECIPE_CLASS = Enum and Enum.ItemClass and Enum.ItemClass.Recipe or 9
 
 -- the reagents the tooltip lists, as { name, count } (nil if none found)
+local AddCraftCost
 local function TooltipReagents(tt)
     local name = tt.GetName and tt:GetName()
     if not name then return end
@@ -1031,9 +1032,10 @@ local function TooltipReagents(tt)
         local fs = _G[name .. "TextLeft" .. i]
         local text = fs and fs:GetText()
         if text then
+            text = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
             if text:find("[Tt]eaches you") then
                 afterTeach = true
-            elseif afterTeach and not text:find("^Requires") then
+            elseif (afterTeach and not text:find("^Requires")) or text:find("^Reagents:") then
                 local list, ok = {}, true
                 text = text:gsub("^Reagents:%s*", "")
                 for part in text:gmatch("[^,]+") do
@@ -1050,11 +1052,7 @@ local function TooltipReagents(tt)
     end
 end
 
-AddRecipeLine = function(tt, id)
-    local classID = C_Item and C_Item.GetItemInfoInstant and select(6, C_Item.GetItemInfoInstant(id))
-    if classID ~= RECIPE_CLASS then return end
-    local reagents = TooltipReagents(tt)
-    if not reagents then return end
+AddCraftCost = function(tt, reagents)
     local p = DB.prices[priceKey]
     if not (p and p.time) then
         tt:AddDoubleLine("Cost to craft", "|cff808080scan the AH first|r", 1, .82, 0, 1, 1, 1)
@@ -1080,6 +1078,28 @@ AddRecipeLine = function(tt, id)
         tt:AddDoubleLine("   " .. r[2] .. " x " .. r[1],
             r[3] and Coin(math.floor(r[3] * r[2] + 0.5)) or "|cff808080not on the AH|r", 1, 1, 1, 1, 1, 1)
     end
+end
+
+AddRecipeLine = function(tt, id)
+    local classID = C_Item and C_Item.GetItemInfoInstant and select(6, C_Item.GetItemInfoInstant(id))
+    if classID ~= RECIPE_CLASS then return end
+    local reagents = TooltipReagents(tt)
+    if reagents then AddCraftCost(tt, reagents) end
+end
+
+-- trainer windows: hovering a recipe to learn shows its reagents too
+local function HookTrainerTooltip()
+    if GameTooltip.fitpTrainer or not GameTooltip.SetTrainerService then return end
+    GameTooltip.fitpTrainer = true
+    hooksecurefunc(GameTooltip, "SetTrainerService", function(tt)
+        if not DB then return end
+        local reagents = TooltipReagents(tt)
+        if reagents then
+            tt:AddLine(" ")
+            AddCraftCost(tt, reagents)
+            tt:Show()
+        end
+    end)
 end
 
 AddWritLine = function(tt, id)
@@ -1714,6 +1734,7 @@ function H.PLAYER_LOGIN()
     ScanEquip()
 
     HookTooltips()
+    HookTrainerTooltip()
     C_Timer.After(5, LearnPricedNames)
     C_Timer.After(65, LearnPricedNames)
     if HandleModifiedItemClick then hooksecurefunc("HandleModifiedItemClick", OnModifiedItemClick) end
