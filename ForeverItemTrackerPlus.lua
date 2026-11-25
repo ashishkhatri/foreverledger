@@ -1032,7 +1032,7 @@ local function TooltipReagents(tt)
         local fs = _G[name .. "TextLeft" .. i]
         local text = fs and fs:GetText()
         if text then
-            text = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+            text = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|n", "\n")
             if text:find("[Tt]eaches you") then
                 afterTeach = true
             elseif (afterTeach and not text:find("^Requires")) or text:find("^Reagents:") then
@@ -1092,24 +1092,35 @@ local function HookTrainerTooltip()
     if GameTooltip.fitpTrainer or not GameTooltip.SetTrainerService then return end
     GameTooltip.fitpTrainer = true
     GameTooltip:HookScript("OnTooltipCleared", function(self) self.fitpCraft = nil end)
-    -- the reagents line can arrive a moment after the tooltip opens (the first
-    -- time you hover a recipe its items aren't loaded yet), so keep looking
-    -- for it briefly
-    local function Try(tt, owner, tries)
-        if not DB or tt.fitpCraft or not tt:IsShown() or tt:GetOwner() ~= owner then return end
+    -- The game builds and rebuilds a trainer tooltip in steps (and again once
+    -- the recipe's items have loaded), so add the cost after every build
+    -- while it's a trainer recipe's tooltip, plus a few checks in case the
+    -- reagents line comes in on its own.
+    local function Add(tt)
+        if not DB or tt.fitpCraft or tt:GetOwner() ~= tt.fitpTrainerOwner then return end
         local reagents = TooltipReagents(tt)
-        if reagents then
-            tt.fitpCraft = true
-            tt:AddLine(" ")
-            AddCraftCost(tt, reagents)
-            tt:Show()
-        elseif tries > 0 then
+        if not reagents then return false end
+        tt.fitpCraft = true
+        tt:AddLine(" ")
+        AddCraftCost(tt, reagents)
+        tt:Show()
+        return true
+    end
+    local function Try(tt, owner, tries)
+        if tt:GetOwner() ~= owner or not tt:IsShown() then return end
+        if Add(tt) == false and tries > 0 then
             C_Timer.After(0.1, function() Try(tt, owner, tries - 1) end)
         end
     end
     hooksecurefunc(GameTooltip, "SetTrainerService", function(tt)
-        Try(tt, tt:GetOwner(), 10)
+        tt.fitpTrainerOwner = tt:GetOwner()
+        Try(tt, tt.fitpTrainerOwner, 10)
     end)
+    if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and TooltipDataProcessor.AllTypes then
+        TooltipDataProcessor.AddTooltipPostCall(TooltipDataProcessor.AllTypes, function(tt)
+            if tt == GameTooltip and tt.fitpTrainerOwner then Add(tt) end
+        end)
+    end
 end
 
 AddWritLine = function(tt, id)
